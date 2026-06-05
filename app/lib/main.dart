@@ -12,6 +12,9 @@ const bool kUseFakeBooth = false;
 void main() {
   final BoothController controller =
       kUseFakeBooth ? FakeBoothController() : RealBoothController();
+  // Mirror the activity log to stdout so it shows up in the console/logs too.
+  controller.log.listen((m) => print('[booth] $m')); // ignore: avoid_print
+  controller.stateStream.listen((s) => print('[booth] state: ${s.name}')); // ignore: avoid_print
   runApp(BoothApp(controller: controller));
 }
 

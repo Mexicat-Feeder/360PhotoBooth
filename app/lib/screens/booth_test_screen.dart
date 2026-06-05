@@ -38,6 +38,8 @@ class _BoothTestScreenState extends State<BoothTestScreen> {
         }
       });
     });
+    // Auto-connect on launch (debug convenience for the test screen).
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.controller.connect());
   }
 
   Color get _stateColor => switch (_state) {

@@ -6,8 +6,10 @@ import 'package:universal_ble/universal_ble.dart';
 import 'booth_controller.dart';
 import 'booth_protocol.dart';
 
-/// Real BLE control via universal_ble (works on Linux desktop + Android + iOS).
-/// Direct port of ble/booth.py.
+/// Real BLE control via universal_ble (Linux desktop + Android + iOS).
+/// Direct port of ble/booth.py, hardened for the flaky KT6368A module:
+///  - checks already-connected system devices before scanning
+///  - treats an OS-level connection as success even if connect() throws/times out
 class RealBoothController implements BoothController {
   static const String _namePrefix = '360 Controller';
 
@@ -35,72 +37,53 @@ class RealBoothController implements BoothController {
     if (!_logCtrl.isClosed) _logCtrl.add(m);
   }
 
+  bool _matches(BleDevice d) => (d.name ?? '').contains(_namePrefix);
+
   @override
   Future<void> connect() async {
     if (_state == BoothState.connected) return;
     _setState(BoothState.scanning);
-    _log('scanning for "$_namePrefix"...');
 
-    final found = Completer<BleDevice>();
-    _scanSub = UniversalBle.scanStream.listen((d) {
-      final name = d.name ?? '';
-      if (name.contains(_namePrefix) && !found.isCompleted) {
-        _log('found "$name" (${d.deviceId})');
-        found.complete(d);
-      }
-    });
-
-    try {
-      await UniversalBle.startScan();
-    } catch (e) {
-      _log('startScan failed: $e');
-    }
-
-    BleDevice device;
-    try {
-      device = await found.future.timeout(const Duration(seconds: 20));
-    } on TimeoutException {
-      await _stopScan();
+    final device = await _findDevice();
+    if (device == null) {
       _setState(BoothState.disconnected);
       _log('controller not found (powered + disconnected from the Chacktok app '
           '+ in range?)');
       return;
     }
-    await _stopScan();
     _device = device;
 
-    // Connect with retries — the cheap KT6368A module is flaky.
+    // Connect with retries. bluez's Connect() is slow on this module and keeps
+    // running after universal_ble's Dart future times out — so we (a) use a
+    // generous timeout, (b) poll isConnected for a few seconds after each
+    // attempt (it often completes late), and (c) disconnect to clear the
+    // "operation already in progress" state before retrying.
     _setState(BoothState.connecting);
-    var connected = false;
-    for (var i = 1; i <= 6; i++) {
-      try {
-        _log('connect attempt $i...');
-        await device.connect(timeout: const Duration(seconds: 20));
-        connected = true;
-        break;
-      } catch (_) {
-        _log('  attempt $i failed; retrying...');
-        await Future<void>.delayed(const Duration(seconds: 2));
-      }
-    }
+    final connected = await _tryConnect(device);
     if (!connected) {
       _setState(BoothState.disconnected);
-      _log('could not connect after 6 tries');
+      _log('could not connect');
       return;
     }
+    _log('connected; discovering services...');
 
-    // Discover services and locate the fff1 command characteristic.
-    try {
-      final services = await device.discoverServices();
-      for (final s in services) {
-        for (final ch in s.characteristics) {
-          if (ch.uuid.toLowerCase().contains(BoothProtocol.charFff1)) {
-            _cmd = ch;
+    // Discover services and locate the fff1 command characteristic (retry once).
+    for (var attempt = 1; attempt <= 2 && _cmd == null; attempt++) {
+      try {
+        final services = await device.discoverServices();
+        for (final s in services) {
+          for (final ch in s.characteristics) {
+            if (ch.uuid.toLowerCase().contains(BoothProtocol.charFff1)) {
+              _cmd = ch;
+            }
           }
         }
+      } catch (e) {
+        _log('discoverServices attempt $attempt failed: $e');
       }
-    } catch (e) {
-      _log('discoverServices failed: $e');
+      if (_cmd == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+      }
     }
 
     if (_cmd == null) {
@@ -109,7 +92,72 @@ class RealBoothController implements BoothController {
       return;
     }
     _setState(BoothState.connected);
-    _log('connected; ready (cmd char ${_cmd!.uuid})');
+    _log('ready (cmd char ${_cmd!.uuid})');
+  }
+
+  Future<bool> _tryConnect(BleDevice device) async {
+    for (var i = 1; i <= 4; i++) {
+      if (await device.isConnected) return true;
+      if (i > 1) {
+        // clear any half-open / in-progress bluez state before retrying
+        try {
+          await device.disconnect();
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 1500));
+      }
+      _log('connect attempt $i...');
+      // bluez often reports connected BEFORE its connect() future resolves
+      // (the future may hang until timeout), so fire connect and poll
+      // isConnected concurrently — proceed the instant the link is up.
+      unawaited(device
+          .connect(timeout: const Duration(seconds: 25))
+          .catchError((Object e) => _log('  attempt $i: $e')));
+      for (var j = 0; j < 50; j++) {
+        if (await device.isConnected) {
+          _log('  connected');
+          return true;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+    }
+    return false;
+  }
+
+  /// Prefer an already-known/connected OS device (it won't be advertising if
+  /// connected), otherwise scan.
+  Future<BleDevice?> _findDevice() async {
+    try {
+      final sys = await UniversalBle.getSystemDevices();
+      for (final d in sys) {
+        if (_matches(d)) {
+          _log('found via system devices: "${d.name}" (${d.deviceId})');
+          return d;
+        }
+      }
+    } catch (_) {
+      // not supported / nothing connected — fall through to scanning
+    }
+
+    _log('scanning for "$_namePrefix"...');
+    final found = Completer<BleDevice>();
+    _scanSub = UniversalBle.scanStream.listen((d) {
+      if (_matches(d) && !found.isCompleted) {
+        _log('found "${d.name}" (${d.deviceId})');
+        found.complete(d);
+      }
+    });
+    try {
+      await UniversalBle.startScan();
+    } catch (e) {
+      _log('startScan failed: $e');
+    }
+    try {
+      return await found.future.timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      return null;
+    } finally {
+      await _stopScan();
+    }
   }
 
   Future<void> _stopScan() async {
