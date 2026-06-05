@@ -3,16 +3,34 @@ import 'package:flutter/material.dart';
 import '../flow/flow_controller.dart';
 import '../theme.dart';
 
-/// Live camera preview with a Start button (begins the countdown) and a Back
-/// button to edit info. The countdown only starts when the guest taps Start.
-class PreviewScreen extends StatelessWidget {
+/// Live camera preview with Start (begins the countdown) and Back (edit info).
+/// The countdown only starts when the guest taps Start.
+class PreviewScreen extends StatefulWidget {
   const PreviewScreen({super.key, required this.flow});
   final FlowController flow;
 
   @override
+  State<PreviewScreen> createState() => _PreviewScreenState();
+}
+
+class _PreviewScreenState extends State<PreviewScreen> {
+  @override
+  void initState() {
+    super.initState();
+    widget.flow.camera.startPreview();
+  }
+
+  @override
+  void dispose() {
+    widget.flow.camera.stopPreview();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final flow = widget.flow;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       child: Column(
         children: [
           Text("Looking good, ${flow.name}!",
@@ -25,7 +43,7 @@ class PreviewScreen extends StatelessWidget {
           Expanded(
             child: Center(
               child: AspectRatio(
-                aspectRatio: 3 / 4,
+                aspectRatio: 4 / 3,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(28),

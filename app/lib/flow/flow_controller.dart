@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -36,7 +37,9 @@ class FlowController extends ChangeNotifier {
   // processing/result
   double progress = 0;
   String? previewUrl;
-  String? resultUrl;
+  String? resultUrl;          // remote URL (for the QR)
+  String? resultLocalPath;    // downloaded mp4 (for in-app playback)
+  bool showQr = false;        // result screen: false = video, true = QR
   String? error;
   String? _videoPath;
 
@@ -63,9 +66,21 @@ class FlowController extends ChangeNotifier {
     progress = 0;
     previewUrl = null;
     resultUrl = null;
+    resultLocalPath = null;
+    showQr = false;
     error = null;
     _videoPath = null;
     phase = AppPhase.attract;
+    notifyListeners();
+  }
+
+  void goToQr() {
+    showQr = true;
+    notifyListeners();
+  }
+
+  void goToVideo() {
+    showQr = false;
     notifyListeners();
   }
 
@@ -109,6 +124,14 @@ class FlowController extends ChangeNotifier {
           break;
         }
         notifyListeners();
+      }
+      // download the result for in-app playback
+      if (resultUrl != null) {
+        final bytes = await backend.download(resultUrl!);
+        final dir = Directory.systemTemp.createTempSync('booth_result_');
+        final f = File('${dir.path}/result.mp4');
+        await f.writeAsBytes(bytes);
+        resultLocalPath = f.path;
       }
     } catch (e) {
       error = 'processing failed: $e';

@@ -7,6 +7,7 @@ import 'ble/booth_controller.dart';
 import 'ble/fake_booth_controller.dart';
 import 'ble/real_booth_controller.dart';
 import 'camera/camera_service.dart';
+import 'camera/real_camera_linux.dart';
 import 'flow/flow_controller.dart';
 import 'screens/booth_flow.dart';
 import 'theme.dart';
@@ -25,7 +26,9 @@ String backendBaseUrl() {
 void main() {
   final BoothController booth =
       kUseFakeBooth ? FakeBoothController() : RealBoothController();
-  final CameraService camera = FakeCameraService();
+  // Linux desktop (this box) uses the real webcam via ffmpeg; emulator uses Fake.
+  final CameraService camera =
+      Platform.isLinux ? RealCameraLinux() : FakeCameraService();
   final backend = BackendClient(backendBaseUrl());
 
   // mirror booth log to stdout for debugging

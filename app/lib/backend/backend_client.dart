@@ -56,4 +56,9 @@ class BackendClient {
 
   String absolute(String pathOrUrl) =>
       pathOrUrl.startsWith('http') ? pathOrUrl : '$baseUrl$pathOrUrl';
+
+  Future<List<int>> download(String url) async {
+    final r = await http.get(Uri.parse(url));
+    return r.bodyBytes;
+  }
 }

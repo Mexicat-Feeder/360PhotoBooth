@@ -9,12 +9,19 @@ import '../theme.dart';
 /// later on Android (real `camera` plugin) unchanged.
 abstract class CameraService {
   Future<void> init();
+
+  /// Begin/refresh the live preview (camera screen visible).
+  Future<void> startPreview();
+
+  /// Stop the live preview (release the camera when not needed).
+  Future<void> stopPreview();
+
   Future<void> startRecording();
 
   /// Stops recording and returns the local file path of the captured video.
   Future<String> stopRecording();
 
-  /// A preview widget for the capture screen.
+  /// A live preview widget.
   Widget buildPreview();
 
   void dispose();
@@ -25,6 +32,12 @@ abstract class CameraService {
 class FakeCameraService implements CameraService {
   @override
   Future<void> init() async {}
+
+  @override
+  Future<void> startPreview() async {}
+
+  @override
+  Future<void> stopPreview() async {}
 
   @override
   Future<void> startRecording() async {}
