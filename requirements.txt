@@ -1,0 +1,5 @@
+# BLE bring-up tooling. Install with:
+#   pip3 install --user --break-system-packages -r requirements.txt
+# or in a venv (needs: sudo apt install python3.12-venv):
+#   python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+bleak>=3.0
