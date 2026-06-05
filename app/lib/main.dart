@@ -1,38 +1,53 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 
+import 'backend/backend_client.dart';
 import 'ble/booth_controller.dart';
 import 'ble/fake_booth_controller.dart';
 import 'ble/real_booth_controller.dart';
-import 'screens/booth_test_screen.dart';
+import 'camera/camera_service.dart';
+import 'flow/flow_controller.dart';
+import 'screens/booth_flow.dart';
+import 'theme.dart';
 
-/// Set to true to use the simulated booth (Android emulator / pure-UI work,
-/// where there's no Bluetooth radio). false = real BLE (Linux desktop, phone).
+/// true = simulated booth (Android emulator / no Bluetooth). false = real BLE.
 const bool kUseFakeBooth = false;
 
+/// Backend base URL. Linux/desktop dev -> localhost; Android emulator -> 10.0.2.2.
+String backendBaseUrl() {
+  const override = String.fromEnvironment('BOOTH_BACKEND');
+  if (override.isNotEmpty) return override;
+  if (Platform.isAndroid) return 'http://10.0.2.2:8090';
+  return 'http://localhost:8090';
+}
+
 void main() {
-  final BoothController controller =
+  final BoothController booth =
       kUseFakeBooth ? FakeBoothController() : RealBoothController();
-  // Mirror the activity log to stdout so it shows up in the console/logs too.
-  controller.log.listen((m) => print('[booth] $m')); // ignore: avoid_print
-  controller.stateStream.listen((s) => print('[booth] state: ${s.name}')); // ignore: avoid_print
-  runApp(BoothApp(controller: controller));
+  final CameraService camera = FakeCameraService();
+  final backend = BackendClient(backendBaseUrl());
+
+  // mirror booth log to stdout for debugging
+  booth.log.listen((m) => print('[booth] $m')); // ignore: avoid_print
+
+  final flow = FlowController(booth: booth, camera: camera, backend: backend);
+  flow.init();
+
+  runApp(BoothApp(flow: flow));
 }
 
 class BoothApp extends StatelessWidget {
-  const BoothApp({super.key, required this.controller});
-
-  final BoothController controller;
+  const BoothApp({super.key, required this.flow});
+  final FlowController flow;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: '360 Booth',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: BoothTestScreen(controller: controller),
+      theme: buildTheme(),
+      home: BoothFlow(flow: flow),
     );
   }
 }

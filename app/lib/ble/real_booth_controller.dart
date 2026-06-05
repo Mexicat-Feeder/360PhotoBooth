@@ -15,6 +15,7 @@ class RealBoothController implements BoothController {
 
   final _stateCtrl = StreamController<BoothState>.broadcast();
   final _logCtrl = StreamController<String>.broadcast();
+  final List<String> _history = <String>[];
 
   BoothState _state = BoothState.disconnected;
   BleDevice? _device;
@@ -27,6 +28,8 @@ class RealBoothController implements BoothController {
   Stream<BoothState> get stateStream => _stateCtrl.stream;
   @override
   Stream<String> get log => _logCtrl.stream;
+  @override
+  List<String> get logHistory => List.unmodifiable(_history);
 
   void _setState(BoothState s) {
     _state = s;
@@ -34,6 +37,8 @@ class RealBoothController implements BoothController {
   }
 
   void _log(String m) {
+    _history.add(m);
+    if (_history.length > 400) _history.removeAt(0);
     if (!_logCtrl.isClosed) _logCtrl.add(m);
   }
 

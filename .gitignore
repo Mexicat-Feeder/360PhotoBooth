@@ -6,3 +6,7 @@ btsnoop_hci.log
 captures/
 *.mp4
 *.mov
+
+# ComfyUI runtime (models/outputs are huge)
+comfyui/ComfyUI/
+booth_backend/_data/

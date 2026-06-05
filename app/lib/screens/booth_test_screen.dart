@@ -26,6 +26,8 @@ class _BoothTestScreenState extends State<BoothTestScreen> {
   @override
   void initState() {
     super.initState();
+    _state = widget.controller.state;
+    _log.addAll(widget.controller.logHistory);
     widget.controller.stateStream.listen((s) => setState(() => _state = s));
     widget.controller.log.listen((m) {
       setState(() {
@@ -38,8 +40,6 @@ class _BoothTestScreenState extends State<BoothTestScreen> {
         }
       });
     });
-    // Auto-connect on launch (debug convenience for the test screen).
-    WidgetsBinding.instance.addPostFrameCallback((_) => widget.controller.connect());
   }
 
   Color get _stateColor => switch (_state) {
@@ -56,7 +56,7 @@ class _BoothTestScreenState extends State<BoothTestScreen> {
     final c = widget.controller;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Booth BLE Test'),
+        title: const Text('Developer Console'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),

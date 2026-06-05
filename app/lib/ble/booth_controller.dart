@@ -11,6 +11,9 @@ abstract class BoothController {
   /// Human-readable activity log (commands sent, acks, connection events).
   Stream<String> get log;
 
+  /// Buffered log history (so the dev console shows events from before it opened).
+  List<String> get logHistory;
+
   /// Scan for the controller by name and connect (with retries).
   Future<void> connect();
   Future<void> disconnect();
