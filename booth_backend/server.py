@@ -20,6 +20,7 @@ import json
 import os
 import queue
 import socket
+import subprocess
 import threading
 import time
 import uuid
@@ -110,11 +111,30 @@ def _process(job: Job) -> None:
         raise RuntimeError("ComfyUI produced no video output")
     fn, sub = found
     data = comfy.view_bytes(fn, sub, "output")
+    raw_path = DATA / f"{job.id}_raw.mp4"
+    raw_path.write_bytes(data)
     out_path = DATA / f"{job.id}.mp4"
-    out_path.write_bytes(data)
+    # motion-interpolate the low-fps AI frames up to a smooth fps (ffmpeg on the
+    # host; in-graph RIFE is broken on this ROCm build)
+    if not _smooth(raw_path, out_path):
+        out_path.write_bytes(data)  # fallback: serve the raw clip
     with _lock:
         job.result = str(out_path)
         job.progress = 1.0
+
+
+def _smooth(src: Path, dst: Path, fps: int = 16) -> bool:
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(src),
+             "-vf", f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:vsbmc=1",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+             "-y", str(dst)],
+            timeout=120,
+        )
+        return r.returncode == 0 and dst.exists()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _worker() -> None:

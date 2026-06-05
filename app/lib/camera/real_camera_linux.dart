@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -22,6 +23,13 @@ class RealCameraLinux implements CameraService {
 
   String get previewPath => _previewPath;
 
+  void _logErr(String tag, Process p) {
+    p.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(
+        (l) {
+      if (l.trim().isNotEmpty) print('[cam $tag] $l'); // ignore: avoid_print
+    }, onError: (_) {});
+  }
+
   @override
   Future<void> init() async {
     _dir = Directory.systemTemp.createTempSync('booth_cam_');
@@ -39,7 +47,9 @@ class RealCameraLinux implements CameraService {
         '-i', device,
         '-vf', 'fps=12', '-q:v', '6', '-update', '1', '-y', _previewPath,
       ]);
-    } catch (_) {
+      _logErr('preview', _preview!);
+    } catch (e) {
+      print('[cam preview] start failed: $e'); // ignore: avoid_print
       _preview = null; // ffmpeg missing / device busy — preview just won't show
     }
   }
@@ -64,11 +74,16 @@ class RealCameraLinux implements CameraService {
       '-hide_banner', '-loglevel', 'error',
       '-f', 'v4l2', '-framerate', '24', '-video_size', '1280x720',
       '-i', device,
-      // center-crop to square so the square AI output isn't distorted
+      // output 1: the recording (center-cropped square), 30s safety cap
       '-vf', 'crop=720:720',
+      '-t', '30',
       '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart', '-y', _recordPath,
+      // output 2: a live preview so the capture screen isn't frozen
+      '-vf', 'fps=12,crop=720:720', '-q:v', '6', '-update', '1', '-y',
+      _previewPath,
     ]);
+    _logErr('record', _record!);
   }
 
   @override

@@ -48,10 +48,10 @@
     "class_type": "VHS_LoadVideo",
     "inputs": {
       "video": "PLACEHOLDER.mp4",
-      "force_rate": 8.0,
+      "force_rate": 4.0,
       "custom_width": 512,
       "custom_height": 512,
-      "frame_load_cap": 24,
+      "frame_load_cap": 32,
       "skip_first_frames": 0,
       "select_every_nth": 1,
       "format": "AnimateDiff"
@@ -178,7 +178,7 @@
         "13",
         0
       ],
-      "frame_rate": 12.0,
+      "frame_rate": 4.0,
       "loop_count": 0,
       "filename_prefix": "booth_test",
       "format": "video/h264-mp4",
