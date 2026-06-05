@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import '../theme.dart';
 
@@ -30,10 +31,12 @@ class FakeCameraService implements CameraService {
 
   @override
   Future<String> stopRecording() async {
+    // Emit a REAL sample clip (Linux dev has no camera) so the backend/ComfyUI
+    // gets valid video. On the tablet, RealCameraService records the guest.
     final dir = Directory.systemTemp.createTempSync('booth_capture_');
     final f = File('${dir.path}/capture.mp4');
-    // dummy payload — enough to exercise multipart upload to the mock backend
-    await f.writeAsBytes(List<int>.filled(64 * 1024, 0));
+    final bytes = await rootBundle.load('assets/sample_capture.mp4');
+    await f.writeAsBytes(bytes.buffer.asUint8List());
     return f.path;
   }
 

@@ -10,3 +10,4 @@ captures/
 # ComfyUI runtime (models/outputs are huge)
 comfyui/ComfyUI/
 booth_backend/_data/
+!app/assets/sample_capture.mp4

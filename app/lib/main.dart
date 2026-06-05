@@ -18,8 +18,8 @@ const bool kUseFakeBooth = false;
 String backendBaseUrl() {
   const override = String.fromEnvironment('BOOTH_BACKEND');
   if (override.isNotEmpty) return override;
-  if (Platform.isAndroid) return 'http://10.0.2.2:8090';
-  return 'http://localhost:8090';
+  if (Platform.isAndroid) return 'http://10.0.2.2:8500';
+  return 'http://localhost:8500';
 }
 
 void main() {
