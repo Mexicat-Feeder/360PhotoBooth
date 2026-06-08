@@ -16,8 +16,8 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
   final _email = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
-  bool get _valid =>
-      _name.text.trim().isNotEmpty && _email.text.contains('@');
+  // Name is required; email is optional (final video is delivered via the QR).
+  bool get _valid => _name.text.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +58,13 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
                         }
                       : null,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                if (!_valid)
+                  const Center(
+                    child: Text('Enter your name to continue',
+                        style: TextStyle(color: Colors.white38, fontSize: 13)),
+                  ),
+                const SizedBox(height: 4),
                 Center(
                   child: TextButton(
                     onPressed: () => widget.flow.go(AppPhase.attract),
