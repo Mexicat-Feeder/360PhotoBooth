@@ -8,18 +8,10 @@ import '../ble/booth_controller.dart';
 import '../ble/booth_protocol.dart';
 import '../camera/camera_service.dart';
 
-enum AppPhase {
-  attract,
-  info,
-  preview,
-  countdown,
-  capture,
-  processing, // generating the style previews
-  stylePick,  // choose a style from the gallery
-  rendering,  // rendering the chosen style as a full video
-  result,     // play video -> QR
-}
+enum AppPhase { attract, info, preview, countdown, capture, processing, result }
 
+/// Drives the guest experience: attract -> info -> countdown -> capture(+spin)
+/// -> processing -> result. Owns the booth, camera, and backend.
 class FlowController extends ChangeNotifier {
   FlowController({
     required this.booth,
@@ -33,25 +25,27 @@ class FlowController extends ChangeNotifier {
 
   AppPhase phase = AppPhase.attract;
 
+  // guest
   String name = '';
   String email = '';
 
+  // capture config
   SpinDir dir = SpinDir.ccw;
   int speed = 5;
   int spinSecs = 8;
 
-  // job / styles / result
-  String? jobId;
-  List<StyleOption> styles = [];
+  // processing/result
   double progress = 0;
-  String? resultUrl;
-  String? resultLocalPath;
-  bool showQr = false;
+  String? previewUrl;
+  String? resultUrl;          // remote URL (for the QR)
+  String? resultLocalPath;    // downloaded mp4 (for in-app playback)
+  bool showQr = false;        // result screen: false = video, true = QR
   String? error;
   String? _videoPath;
 
   Future<void> init() async {
     await camera.init();
+    // connect the booth in the background so it's ready by capture time
     unawaited(booth.connect());
   }
 
@@ -69,9 +63,8 @@ class FlowController extends ChangeNotifier {
   void reset() {
     name = '';
     email = '';
-    jobId = null;
-    styles = [];
     progress = 0;
+    previewUrl = null;
     resultUrl = null;
     resultLocalPath = null;
     showQr = false;
@@ -91,76 +84,58 @@ class FlowController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Countdown finished: record + spin, then upload and generate the previews.
+  /// Called when the countdown finishes: record + spin together, then process.
   Future<void> runCaptureAndProcess() async {
     go(AppPhase.capture);
     error = null;
+
     try {
       await camera.startRecording();
+      // spin the real rig (controller auto-stops after spinSecs too)
       await booth.spin(dir, speed, spinSecs);
       await Future<void>.delayed(Duration(seconds: spinSecs));
       await booth.stop();
       _videoPath = await camera.stopRecording();
     } catch (e) {
-      _fail('capture failed: $e');
+      error = 'capture failed: $e';
+      go(AppPhase.result);
       return;
     }
+
     go(AppPhase.processing);
-    await _generatePreviews();
+    await _process();
   }
 
-  Future<void> _generatePreviews() async {
+  Future<void> _process() async {
     progress = 0;
     try {
-      jobId = await backend.createJob(_videoPath!, name, email);
-      while (true) {
-        final s = await backend.getStatus(jobId!);
-        progress = s.progress;
-        notifyListeners();
-        if (s.failed) return _fail(s.error ?? 'preview generation failed');
-        if (s.choosing) {
-          styles = s.styles;
-          go(AppPhase.stylePick);
-          return;
+      final jobId = await backend.uploadJob(_videoPath!, name, email);
+      await for (final p in backend.pollProgress(jobId)) {
+        progress = p.progress;
+        previewUrl =
+            p.previewUrl == null ? null : backend.absolute(p.previewUrl!);
+        if (p.failed) {
+          error = 'generation failed';
+          break;
         }
-        await Future<void>.delayed(const Duration(milliseconds: 700));
+        if (p.done) {
+          resultUrl =
+              p.resultUrl == null ? null : backend.absolute(p.resultUrl!);
+          break;
+        }
+        notifyListeners();
+      }
+      // download the result for in-app playback
+      if (resultUrl != null) {
+        final bytes = await backend.download(resultUrl!);
+        final dir = Directory.systemTemp.createTempSync('booth_result_');
+        final f = File('${dir.path}/result.mp4');
+        await f.writeAsBytes(bytes);
+        resultLocalPath = f.path;
       }
     } catch (e) {
-      _fail('upload/preview failed: $e');
+      error = 'processing failed: $e';
     }
-  }
-
-  Future<void> selectStyle(String styleId) async {
-    go(AppPhase.rendering);
-    progress = 0;
-    try {
-      await backend.selectStyle(jobId!, styleId);
-      while (true) {
-        final s = await backend.getStatus(jobId!);
-        progress = s.progress;
-        notifyListeners();
-        if (s.failed) return _fail(s.error ?? 'render failed');
-        if (s.done) {
-          resultUrl = s.resultUrl;
-          if (resultUrl != null) {
-            final bytes = await backend.download(resultUrl!);
-            final dir = Directory.systemTemp.createTempSync('booth_result_');
-            final f = File('${dir.path}/result.mp4');
-            await f.writeAsBytes(bytes);
-            resultLocalPath = f.path;
-          }
-          go(AppPhase.result);
-          return;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 700));
-      }
-    } catch (e) {
-      _fail('render failed: $e');
-    }
-  }
-
-  void _fail(String msg) {
-    error = msg;
     go(AppPhase.result);
   }
 }

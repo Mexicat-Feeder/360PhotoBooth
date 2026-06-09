@@ -1,19 +1,18 @@
 """
-Booth backend — app <-> local ComfyUI, multi-style.
+Booth backend — brokers the Flutter app <-> local ComfyUI (Van Gogh vid2vid).
 
-Flow:
-  POST /jobs (mp4,name,email) -> {job_id}; backend extracts a frame and renders a
-       fast stylized STILL for each style (the preview menu).
-  GET  /jobs/{id} -> {status, progress, styles:[{id,label,preview_url}], result_url}
-       status: previewing -> choose -> rendering -> done | failed
-  POST /jobs/{id}/select {style} -> render the full Van-Gogh-style VIDEO for that
-       style (AnimateLCM vid2vid) + ffmpeg motion-smoothing.
-  GET  /jobs/{id}/preview/{style} -> stylized still (png)
-  GET  /jobs/{id}/result -> final stylized mp4
+Same HTTP contract as mock_backend (so the app is unchanged):
+  POST /jobs                  multipart: file(mp4), name, email   -> {job_id}
+  GET  /jobs/{id}             -> {status, progress, preview_url, result_url}
+  GET  /jobs/{id}/preview     -> latest generation preview (jpeg)
+  GET  /jobs/{id}/result      -> stylized mp4
 
 Run:
-  COMFY_URL=http://127.0.0.1:8188 BOOTH_PORT=8500 \
-    python -m uvicorn booth_backend.server:app --host 0.0.0.0 --port 8500
+  pip install --user --break-system-packages -r booth_backend/requirements.txt
+  python -m uvicorn booth_backend.server:app --host 0.0.0.0 --port 8000
+Env:
+  COMFY_URL   (default http://127.0.0.1:8188)
+  WORKFLOW    (default booth_backend/workflows/vangogh_vid2vid.json)
 """
 from __future__ import annotations
 
@@ -31,18 +30,16 @@ from pathlib import Path
 from fastapi import FastAPI, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from .comfy_client import ComfyClient
-from .styles import BY_ID, NEGATIVE, STYLES
+from .comfy_client import ComfyClient, Progress
 
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188")
-WF_DIR = Path(os.environ.get("WF_DIR", "booth_backend/workflows"))
-STILL_WF = WF_DIR / "style_still.json"
-VIDEO_WF = WF_DIR / "vangogh_vid2vid.json"
-PORT = int(os.environ.get("BOOTH_PORT", "8500"))
+WORKFLOW_PATH = Path(os.environ.get(
+    "WORKFLOW", "booth_backend/workflows/vangogh_vid2vid.json"))
+PORT = int(os.environ.get("BOOTH_PORT", "8000"))
 DATA = Path(os.environ.get("BOOTH_DATA", "booth_backend/_data"))
 DATA.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="360 Booth Backend (multi-style)")
+app = FastAPI(title="360 Booth Backend (ComfyUI)")
 comfy = ComfyClient(COMFY_URL)
 
 
@@ -51,18 +48,18 @@ class Job:
     id: str
     name: str
     email: str
-    src: str
-    status: str = "previewing"   # previewing|choose|rendering|done|failed
+    src: str                       # local path to uploaded mp4
+    status: str = "queued"         # queued|generating|done|failed
     progress: float = 0.0
-    previews: dict = field(default_factory=dict)  # style_id -> png bytes
-    selected: str | None = None
-    result: str | None = None
+    preview: bytes | None = None   # latest preview jpeg
+    result: str | None = None      # local path to stylized mp4
     error: str | None = None
+    created: float = field(default_factory=time.time)
 
 
 _jobs: dict[str, Job] = {}
 _lock = threading.Lock()
-_work: "queue.Queue[tuple[str, str]]" = queue.Queue()
+_work: "queue.Queue[str]" = queue.Queue()
 
 
 def _lan_ip() -> str:
@@ -76,15 +73,54 @@ def _lan_ip() -> str:
         s.close()
 
 
-def _extract_frame(video: str, out: str) -> bool:
-    try:
-        # grab a frame ~1.5s in (past the initial motion blur)
-        r = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "1.5",
-             "-i", video, "-frames:v", "1", "-y", out], timeout=30)
-        return r.returncode == 0 and Path(out).exists()
-    except Exception:
-        return False
+def _patch_workflow(wf: dict, input_name: str, job_id: str) -> dict:
+    """Insert the per-job input video filename + a unique output prefix.
+    Style/prompt/LoRA/steps live in the template itself."""
+    for node in wf.values():
+        ct = node.get("class_type", "")
+        ins = node.setdefault("inputs", {})
+        if ct in ("VHS_LoadVideo", "VHS_LoadVideoPath", "LoadVideo"):
+            # VHS uses "video" for the uploaded filename
+            if "video" in ins:
+                ins["video"] = input_name
+        if ct in ("VHS_VideoCombine",) and "filename_prefix" in ins:
+            ins["filename_prefix"] = f"booth_{job_id}"
+    return wf
+
+
+def _process(job: Job) -> None:
+    if not WORKFLOW_PATH.exists():
+        raise RuntimeError(f"workflow not found: {WORKFLOW_PATH} "
+                           "(author it in ComfyUI and export API JSON)")
+    wf = json.loads(WORKFLOW_PATH.read_text())
+    input_name = comfy.upload_video(job.src)
+    wf = _patch_workflow(wf, input_name, job.id)
+    client_id = job.id
+
+    def on_progress(p: Progress) -> None:
+        with _lock:
+            job.progress = round(p.fraction, 3)
+
+    def on_preview(jpeg: bytes) -> None:
+        with _lock:
+            job.preview = jpeg
+
+    outputs = comfy.run_and_wait(wf, client_id, on_progress, on_preview)
+    found = ComfyClient.find_output_video(outputs)
+    if not found:
+        raise RuntimeError("ComfyUI produced no video output")
+    fn, sub = found
+    data = comfy.view_bytes(fn, sub, "output")
+    raw_path = DATA / f"{job.id}_raw.mp4"
+    raw_path.write_bytes(data)
+    out_path = DATA / f"{job.id}.mp4"
+    # motion-interpolate the low-fps AI frames up to a smooth fps (ffmpeg on the
+    # host; in-graph RIFE is broken on this ROCm build)
+    if not _smooth(raw_path, out_path):
+        out_path.write_bytes(data)  # fallback: serve the raw clip
+    with _lock:
+        job.result = str(out_path)
+        job.progress = 1.0
 
 
 def _smooth(src: Path, dst: Path, fps: int = 16) -> bool:
@@ -93,77 +129,26 @@ def _smooth(src: Path, dst: Path, fps: int = 16) -> bool:
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(src),
              "-vf", f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:vsbmc=1",
              "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-             "-y", str(dst)], timeout=120)
+             "-y", str(dst)],
+            timeout=120,
+        )
         return r.returncode == 0 and dst.exists()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
-
-
-def _do_previews(job: Job) -> None:
-    frame = DATA / f"{job.id}_frame.jpg"
-    if not _extract_frame(job.src, str(frame)):
-        raise RuntimeError("could not extract a frame from the recording")
-    frame_name = comfy.upload_image(str(frame))
-    wf_tpl = json.loads(STILL_WF.read_text())
-    for i, st in enumerate(STYLES):
-        wf = json.loads(json.dumps(wf_tpl))
-        wf["2"]["inputs"]["image"] = frame_name
-        wf["4"]["inputs"]["text"] = st["prompt"]
-        wf["9"]["inputs"]["denoise"] = st["denoise"]
-        outputs = comfy.run_and_wait(wf, f"{job.id}-prev-{st['id']}")
-        found = ComfyClient.find_output_image(outputs)
-        if found:
-            png = comfy.view_bytes(found[0], found[1], "output")
-            with _lock:
-                job.previews[st["id"]] = png
-        with _lock:
-            job.progress = (i + 1) / len(STYLES)
-    with _lock:
-        job.status = "choose"
-        job.progress = 0.0
-
-
-def _do_render(job: Job) -> None:
-    st = BY_ID[job.selected]
-    video_name = comfy.upload_video(job.src)
-    wf = json.loads(VIDEO_WF.read_text())
-    wf["5"]["inputs"]["video"] = video_name
-    wf["7"]["inputs"]["text"] = st["prompt"]
-    wf["8"]["inputs"]["text"] = NEGATIVE
-    wf["12"]["inputs"]["denoise"] = st["denoise"]
-    if "14" in wf:
-        wf["14"]["inputs"]["filename_prefix"] = f"booth_{job.id}"
-
-    def on_prog(p):
-        with _lock:
-            job.progress = round(p.fraction, 3)
-
-    outputs = comfy.run_and_wait(wf, f"{job.id}-render", on_progress=on_prog)
-    found = ComfyClient.find_output_video(outputs)
-    if not found:
-        raise RuntimeError("ComfyUI produced no video")
-    raw = DATA / f"{job.id}_raw.mp4"
-    raw.write_bytes(comfy.view_bytes(found[0], found[1], "output"))
-    out = DATA / f"{job.id}.mp4"
-    if not _smooth(raw, out):
-        out.write_bytes(raw.read_bytes())
-    with _lock:
-        job.result = str(out)
-        job.progress = 1.0
-        job.status = "done"
 
 
 def _worker() -> None:
     while True:
-        jid, action = _work.get()
+        jid = _work.get()
         job = _jobs.get(jid)
         if job is None:
             continue
+        with _lock:
+            job.status = "generating"
         try:
-            if action == "preview":
-                _do_previews(job)
-            elif action == "render":
-                _do_render(job)
+            _process(job)
+            with _lock:
+                job.status = "done"
         except Exception as e:  # noqa: BLE001
             with _lock:
                 job.status = "failed"
@@ -181,58 +166,36 @@ async def create_job(file: UploadFile, name: str = Form(""), email: str = Form("
     job = Job(id=jid, name=name, email=email, src=str(src))
     with _lock:
         _jobs[jid] = job
-    _work.put((jid, "preview"))
+    _work.put(jid)
     return {"job_id": jid}
 
 
 @app.get("/jobs/{jid}")
-async def status(jid: str):
+async def job_status(jid: str):
     job = _jobs.get(jid)
     if job is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     base = f"http://{_lan_ip()}:{PORT}"
     with _lock:
-        styles = [
-            {"id": s["id"], "label": s["label"],
-             "preview_url": f"{base}/jobs/{jid}/preview/{s['id']}"}
-            for s in STYLES if s["id"] in job.previews
-        ]
         return {
             "status": job.status,
             "progress": job.progress,
-            "selected": job.selected,
-            "styles": styles,
+            "preview_url": f"{base}/jobs/{jid}/preview?t={int(time.time())}"
+            if job.preview else None,
             "result_url": f"{base}/jobs/{jid}/result" if job.result else None,
-            "error": job.error,
         }
 
 
-@app.post("/jobs/{jid}/select")
-async def select(jid: str, style: str = Form(...)):
+@app.get("/jobs/{jid}/preview")
+async def job_preview(jid: str):
     job = _jobs.get(jid)
-    if job is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    if style not in BY_ID:
-        return JSONResponse({"error": "unknown style"}, status_code=400)
-    with _lock:
-        job.selected = style
-        job.status = "rendering"
-        job.progress = 0.0
-        job.result = None
-    _work.put((jid, "render"))
-    return {"ok": True}
-
-
-@app.get("/jobs/{jid}/preview/{style}")
-async def preview(jid: str, style: str):
-    job = _jobs.get(jid)
-    if job is None or style not in job.previews:
+    if job is None or job.preview is None:
         return JSONResponse({"error": "no preview"}, status_code=404)
-    return Response(content=job.previews[style], media_type="image/png")
+    return Response(content=job.preview, media_type="image/jpeg")
 
 
 @app.get("/jobs/{jid}/result")
-async def result(jid: str):
+async def job_result(jid: str):
     job = _jobs.get(jid)
     if job is None or job.result is None:
         return JSONResponse({"error": "not ready"}, status_code=404)
@@ -241,5 +204,4 @@ async def result(jid: str):
 
 @app.get("/")
 async def root():
-    return {"ok": True, "comfy": COMFY_URL, "styles": len(STYLES),
-            "jobs": len(_jobs)}
+    return {"ok": True, "comfy": COMFY_URL, "jobs": len(_jobs)}

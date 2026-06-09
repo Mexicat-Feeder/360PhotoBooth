@@ -9,7 +9,6 @@ import 'info_entry_screen.dart';
 import 'preview_screen.dart';
 import 'processing_screen.dart';
 import 'result_screen.dart';
-import 'style_pick_screen.dart';
 
 /// Root of the guest experience — swaps screens by phase, with the AMD logo
 /// (top-left) and "Powered by AMD Compute" footer persistent on every screen.
@@ -37,8 +36,6 @@ class BoothFlow extends StatelessWidget {
                         AppPhase.countdown => CountdownScreen(flow: flow),
                         AppPhase.capture => CaptureScreen(flow: flow),
                         AppPhase.processing => ProcessingScreen(flow: flow),
-                        AppPhase.stylePick => StylePickScreen(flow: flow),
-                        AppPhase.rendering => ProcessingScreen(flow: flow),
                         AppPhase.result => ResultScreen(flow: flow),
                       };
                       return AnimatedSwitcher(

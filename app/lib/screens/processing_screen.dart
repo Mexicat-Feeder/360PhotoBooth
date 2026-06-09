@@ -20,15 +20,21 @@ class ProcessingScreen extends StatelessWidget {
               GlowRing(
                 value: flow.progress <= 0 ? null : flow.progress,
                 size: 230,
-                child: _pctText(pct),
+                child: flow.previewUrl != null
+                    ? ClipOval(
+                        child: Image.network(
+                          flow.previewUrl!,
+                          width: 175,
+                          height: 175,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _pctText(pct),
+                        ),
+                      )
+                    : _pctText(pct),
               ),
               const SizedBox(height: 36),
-              Text(
-                  flow.phase == AppPhase.rendering
-                      ? 'Painting your 360 video'
-                      : 'Creating your style options',
-                  style: const TextStyle(
-                      fontSize: 30, fontWeight: FontWeight.w800)),
+              const Text('Generating your AI video',
+                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
               const SizedBox(height: 10),
               const Text('Running locally on AMD Ryzen AI — no cloud',
                   style: TextStyle(fontSize: 16, color: Colors.white60)),

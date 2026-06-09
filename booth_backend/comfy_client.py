@@ -11,7 +11,6 @@ Endpoints used:
 from __future__ import annotations
 
 import json
-import os
 import urllib.parse
 from dataclasses import dataclass
 from typing import Callable
@@ -45,21 +44,6 @@ class ComfyClient:
                 files={"image": (path.split("/")[-1], f, "video/mp4")},
                 data={"type": "input", "overwrite": "true"},
                 timeout=120,
-            )
-        r.raise_for_status()
-        j = r.json()
-        name = j["name"]
-        if j.get("subfolder"):
-            name = f"{j['subfolder']}/{name}"
-        return name
-
-    def upload_image(self, path: str) -> str:
-        with open(path, "rb") as f:
-            r = requests.post(
-                f"{self.base}/upload/image",
-                files={"image": (os.path.basename(path), f, "image/jpeg")},
-                data={"type": "input", "overwrite": "true"},
-                timeout=60,
             )
         r.raise_for_status()
         j = r.json()
@@ -130,15 +114,6 @@ class ComfyClient:
             return self.history(prompt_id).get(prompt_id, {})
         finally:
             ws.close()
-
-    @staticmethod
-    def find_output_image(outputs: dict) -> tuple[str, str] | None:
-        for node in outputs.get("outputs", {}).values():
-            for item in node.get("images", []) or []:
-                fn = item.get("filename", "")
-                if fn.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                    return fn, item.get("subfolder", "")
-        return None
 
     @staticmethod
     def find_output_video(outputs: dict) -> tuple[str, str] | None:
