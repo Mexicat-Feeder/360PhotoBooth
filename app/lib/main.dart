@@ -9,6 +9,7 @@ import 'ble/real_booth_controller.dart';
 import 'camera/camera_service.dart';
 import 'camera/real_camera_android.dart';
 import 'camera/real_camera_linux.dart';
+import 'camera/real_camera_windows.dart';
 import 'flow/flow_controller.dart';
 import 'screens/booth_flow.dart';
 import 'theme.dart';
@@ -38,6 +39,8 @@ void main() {
       ? RealCameraAndroid()
       : Platform.isLinux
       ? RealCameraLinux()
+      : Platform.isWindows
+      ? RealCameraWindows()
       : FakeCameraService();
   final backend = BackendClient(backendBaseUrl());
 
