@@ -15,9 +15,12 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _consent = false;
 
-  // Name is required; email is optional (final video is delivered via the QR).
-  bool get _valid => _name.text.trim().isNotEmpty;
+  bool get _valid =>
+      _name.text.trim().isNotEmpty &&
+      _email.text.trim().contains('@') &&
+      _consent;
 
   @override
   Widget build(BuildContext context) {
@@ -33,10 +36,11 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('Let’s get you set up',
-                    style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800)),
+                const Text('Let us get you set up',
+                    style:
+                        TextStyle(fontSize: 34, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
-                const Text("We’ll send your video here when it’s ready.",
+                const Text('We will email your AI video when it is ready.',
                     style: TextStyle(fontSize: 16, color: Colors.white60)),
                 const SizedBox(height: 32),
                 _field(_name, 'First name', Icons.person_outline,
@@ -44,7 +48,20 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
                 const SizedBox(height: 16),
                 _field(_email, 'Email', Icons.mail_outline,
                     keyboard: TextInputType.emailAddress),
-                const SizedBox(height: 36),
+                const SizedBox(height: 18),
+                CheckboxListTile(
+                  value: _consent,
+                  onChanged: (value) =>
+                      setState(() => _consent = value ?? false),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: Brand.redBright,
+                  title: const Text(
+                    'I agree to have my video processed and emailed to me.',
+                    style: TextStyle(fontSize: 15, color: Colors.white70),
+                  ),
+                ),
+                const SizedBox(height: 24),
                 GradientButton(
                   label: 'CONTINUE',
                   icon: Icons.arrow_forward,
@@ -52,8 +69,10 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
                   onPressed: _valid
                       ? () {
                           widget.flow.setGuest(
-                              name: _name.text.trim(),
-                              email: _email.text.trim());
+                            name: _name.text.trim(),
+                            email: _email.text.trim(),
+                            consent: _consent,
+                          );
                           widget.flow.go(AppPhase.preview);
                         }
                       : null,
@@ -61,7 +80,7 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
                 const SizedBox(height: 10),
                 if (!_valid)
                   const Center(
-                    child: Text('Enter your name to continue',
+                    child: Text('Enter name, email, and consent to continue',
                         style: TextStyle(color: Colors.white38, fontSize: 13)),
                   ),
                 const SizedBox(height: 4),
@@ -81,7 +100,8 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
   }
 
   Widget _field(TextEditingController c, String label, IconData icon,
-      {TextInputType? keyboard, TextCapitalization cap = TextCapitalization.none}) {
+      {TextInputType? keyboard,
+      TextCapitalization cap = TextCapitalization.none}) {
     return TextFormField(
       controller: c,
       keyboardType: keyboard,

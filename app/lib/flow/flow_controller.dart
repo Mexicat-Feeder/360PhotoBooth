@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -17,6 +16,7 @@ class FlowController extends ChangeNotifier {
     required this.booth,
     required this.camera,
     required this.backend,
+    this.workflow = 'vangogh_vid2vid',
   });
 
   final BoothController booth;
@@ -28,23 +28,29 @@ class FlowController extends ChangeNotifier {
   // guest
   String name = '';
   String email = '';
+  bool consent = false;
 
   // capture config
   SpinDir dir = SpinDir.ccw;
   int speed = 5;
   int spinSecs = 8;
+  String workflow;
 
   // processing/result
   double progress = 0;
   String? previewUrl;
-  String? resultUrl;          // remote URL (for the QR)
-  String? resultLocalPath;    // downloaded mp4 (for in-app playback)
-  bool showQr = false;        // result screen: false = video, true = QR
+  String? resultUrl; // remote URL (for the QR)
+  String? resultLocalPath; // downloaded mp4 (for in-app playback)
+  bool showQr = false; // result screen: false = video, true = QR
   String? error;
   String? _videoPath;
 
   Future<void> init() async {
-    await camera.init();
+    try {
+      await camera.init();
+    } catch (e) {
+      debugPrint('camera init failed: $e');
+    }
     // connect the booth in the background so it's ready by capture time
     unawaited(booth.connect());
   }
@@ -54,15 +60,17 @@ class FlowController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setGuest({String? name, String? email}) {
+  void setGuest({String? name, String? email, bool? consent}) {
     if (name != null) this.name = name;
     if (email != null) this.email = email;
+    if (consent != null) this.consent = consent;
     notifyListeners();
   }
 
   void reset() {
     name = '';
     email = '';
+    consent = false;
     progress = 0;
     previewUrl = null;
     resultUrl = null;
@@ -109,30 +117,17 @@ class FlowController extends ChangeNotifier {
   Future<void> _process() async {
     progress = 0;
     try {
-      final jobId = await backend.uploadJob(_videoPath!, name, email);
-      await for (final p in backend.pollProgress(jobId)) {
-        progress = p.progress;
-        previewUrl =
-            p.previewUrl == null ? null : backend.absolute(p.previewUrl!);
-        if (p.failed) {
-          error = 'generation failed';
-          break;
-        }
-        if (p.done) {
-          resultUrl =
-              p.resultUrl == null ? null : backend.absolute(p.resultUrl!);
-          break;
-        }
-        notifyListeners();
-      }
-      // download the result for in-app playback
-      if (resultUrl != null) {
-        final bytes = await backend.download(resultUrl!);
-        final dir = Directory.systemTemp.createTempSync('booth_result_');
-        final f = File('${dir.path}/result.mp4');
-        await f.writeAsBytes(bytes);
-        resultLocalPath = f.path;
-      }
+      await backend.uploadJob(
+        filePath: _videoPath!,
+        name: name,
+        email: email,
+        consent: consent,
+        workflow: workflow,
+        direction: dir == SpinDir.cw ? 'clock' : 'counter_clock',
+        speed: speed,
+        durationSeconds: spinSecs,
+      );
+      progress = 1;
     } catch (e) {
       error = 'processing failed: $e';
     }

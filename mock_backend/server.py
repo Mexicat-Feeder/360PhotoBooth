@@ -29,6 +29,11 @@ class Job:
     id: str
     name: str
     email: str
+    consent: bool
+    workflow: str
+    direction: str
+    speed: int
+    duration_seconds: int
     video: bytes
     created: float = field(default_factory=time.time)
 
@@ -45,9 +50,31 @@ JOBS: dict[str, Job] = {}
 
 
 @app.post("/jobs")
-async def create_job(file: UploadFile, name: str = Form(""), email: str = Form("")):
-    job = Job(id=uuid.uuid4().hex[:8], name=name, email=email,
-              video=await file.read())
+async def create_job(
+    file: UploadFile,
+    name: str = Form(""),
+    email: str = Form(""),
+    consent: bool = Form(False),
+    workflow: str = Form("vangogh_vid2vid"),
+    direction: str = Form(""),
+    speed: int = Form(0),
+    duration_seconds: int = Form(0),
+):
+    if not consent:
+        return JSONResponse({"error": "consent required"}, status_code=400)
+    if not email.strip():
+        return JSONResponse({"error": "email required"}, status_code=400)
+    job = Job(
+        id=uuid.uuid4().hex[:8],
+        name=name,
+        email=email.strip(),
+        consent=consent,
+        workflow=workflow,
+        direction=direction,
+        speed=speed,
+        duration_seconds=duration_seconds,
+        video=await file.read(),
+    )
     JOBS[job.id] = job
     return {"job_id": job.id}
 
@@ -63,6 +90,9 @@ async def job_status(job_id: str):
         "progress": round(job.progress, 3),
         "preview_url": None,
         "result_url": f"/jobs/{job_id}/result" if done else None,
+        "email_status": "mock_sent" if done else "pending",
+        "email_error": None,
+        "error": None,
     }
 
 

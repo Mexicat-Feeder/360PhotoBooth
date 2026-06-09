@@ -24,10 +24,24 @@ class BackendClient {
   BackendClient(this.baseUrl);
   final String baseUrl;
 
-  Future<String> uploadJob(String filePath, String name, String email) async {
+  Future<String> uploadJob({
+    required String filePath,
+    required String name,
+    required String email,
+    required bool consent,
+    required String workflow,
+    required String direction,
+    required int speed,
+    required int durationSeconds,
+  }) async {
     final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/jobs'))
       ..fields['name'] = name
       ..fields['email'] = email
+      ..fields['consent'] = consent.toString()
+      ..fields['workflow'] = workflow
+      ..fields['direction'] = direction
+      ..fields['speed'] = speed.toString()
+      ..fields['duration_seconds'] = durationSeconds.toString()
       ..files.add(await http.MultipartFile.fromPath('file', filePath));
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();

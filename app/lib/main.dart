@@ -7,6 +7,7 @@ import 'ble/booth_controller.dart';
 import 'ble/fake_booth_controller.dart';
 import 'ble/real_booth_controller.dart';
 import 'camera/camera_service.dart';
+import 'camera/real_camera_android.dart';
 import 'camera/real_camera_linux.dart';
 import 'flow/flow_controller.dart';
 import 'screens/booth_flow.dart';
@@ -14,27 +15,41 @@ import 'theme.dart';
 
 /// true = simulated booth (Android emulator / no Bluetooth). false = real BLE.
 const bool kUseFakeBooth = false;
+const String kWorkflow = String.fromEnvironment(
+  'BOOTH_WORKFLOW',
+  defaultValue: 'vangogh_vid2vid',
+);
 
 /// Backend base URL. Linux/desktop dev -> localhost; Android emulator -> 10.0.2.2.
 String backendBaseUrl() {
   const override = String.fromEnvironment('BOOTH_BACKEND');
   if (override.isNotEmpty) return override;
-  if (Platform.isAndroid) return 'http://10.0.2.2:8500';
-  return 'http://localhost:8500';
+  if (Platform.isAndroid) return 'http://10.6.14.178:8000';
+  return 'http://localhost:8000';
 }
 
 void main() {
-  final BoothController booth =
-      kUseFakeBooth ? FakeBoothController() : RealBoothController();
-  // Linux desktop (this box) uses the real webcam via ffmpeg; emulator uses Fake.
-  final CameraService camera =
-      Platform.isLinux ? RealCameraLinux() : FakeCameraService();
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final BoothController booth = kUseFakeBooth
+      ? FakeBoothController()
+      : RealBoothController();
+  final CameraService camera = Platform.isAndroid
+      ? RealCameraAndroid()
+      : Platform.isLinux
+      ? RealCameraLinux()
+      : FakeCameraService();
   final backend = BackendClient(backendBaseUrl());
 
   // mirror booth log to stdout for debugging
   booth.log.listen((m) => print('[booth] $m')); // ignore: avoid_print
 
-  final flow = FlowController(booth: booth, camera: camera, backend: backend);
+  final flow = FlowController(
+    booth: booth,
+    camera: camera,
+    backend: backend,
+    workflow: kWorkflow,
+  );
   flow.init();
 
   runApp(BoothApp(flow: flow));

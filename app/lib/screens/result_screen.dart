@@ -20,6 +20,16 @@ class ResultScreen extends StatelessWidget {
         flow: flow,
       );
     }
+    if (flow.resultLocalPath == null && flow.resultUrl == null) {
+      return _Message(
+        icon: Icons.mark_email_read_outlined,
+        color: Colors.greenAccent,
+        title: 'You are all set',
+        subtitle:
+            'Your video is being generated. We will email it to ${flow.email} soon.',
+        flow: flow,
+      );
+    }
     return flow.showQr ? _qrView() : _videoView();
   }
 
