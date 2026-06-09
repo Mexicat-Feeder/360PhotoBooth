@@ -23,6 +23,23 @@ using ComfyUI native video/image nodes:
 Preview renders target `360x640`. Final renders target `720x1280` so the MP4
 stays small enough to attach to email.
 
+## Session storage
+
+New uploads are stored under `booth_backend/_data/<session_id>/` instead of
+being dumped directly into `_data`.
+
+For the normal preview/finalize flow, `session_id` is the `preview_job_id`.
+Typical files in the session folder:
+
+- `source.mp4`
+- `preview_meta.json`
+- `preview_source.mp4`
+- `<preset_id>_preview.mp4`
+- `<final_job_id>_raw.mp4`
+- `<final_job_id>.mp4`
+- `<final_job_id>_meta.json`
+- `<final_job_id>_email.mp4` when compression is needed for email
+
 ## Fallback workflow file
 
 `native_video_invert.json` is a simple native-node workflow kept on disk for

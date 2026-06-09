@@ -78,6 +78,7 @@ comfy = ComfyClient(COMFY_URL)
 @dataclass
 class Job:
     id: str
+    session_id: str
     name: str
     email: str
     consent: bool
@@ -141,6 +142,7 @@ PRESET_BY_ID = {p.id: p for p in PRESETS}
 @dataclass
 class PreviewJob:
     id: str
+    session_id: str
     name: str
     email: str
     consent: bool
@@ -161,6 +163,21 @@ _preview_jobs: dict[str, PreviewJob] = {}
 _lock = threading.Lock()
 _work: "queue.Queue[str]" = queue.Queue()
 _preview_work: "queue.Queue[str]" = queue.Queue()
+
+
+def _safe_session_id(value: str) -> str:
+    safe = "".join(ch for ch in value if ch.isalnum() or ch in ("-", "_"))
+    return safe or uuid.uuid4().hex[:8]
+
+
+def _session_dir(session_id: str) -> Path:
+    path = DATA / _safe_session_id(session_id)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _storage_dir_for(src: str | Path) -> Path:
+    return Path(src).parent
 
 
 def _lan_ip() -> str:
@@ -411,7 +428,8 @@ def _process(job: Job) -> None:
         with _lock:
             job.preview = jpeg
 
-    raw_path = DATA / f"{job.id}_raw.mp4"
+    storage_dir = _storage_dir_for(job.src)
+    raw_path = storage_dir / f"{job.id}_raw.mp4"
     _run_comfy_video(
         src=job.src,
         workflow=job.workflow,
@@ -420,7 +438,7 @@ def _process(job: Job) -> None:
         on_progress=on_progress,
         on_preview=on_preview,
     )
-    out_path = DATA / f"{job.id}.mp4"
+    out_path = storage_dir / f"{job.id}.mp4"
     # motion-interpolate the low-fps AI frames up to a smooth fps (ffmpeg on the
     # host; in-graph RIFE is broken on this ROCm build)
     if not _smooth(raw_path, out_path):
@@ -451,7 +469,7 @@ def _attachment_path_for_email(src: Path, job_id: str, max_bytes: int) -> Path |
     if src.stat().st_size <= max_bytes:
         return src
 
-    dst = DATA / f"{job_id}_email.mp4"
+    dst = src.parent / f"{job_id}_email.mp4"
     for crf in (26, 30, 34):
         try:
             if dst.exists():
@@ -480,8 +498,8 @@ def _attachment_path_for_email(src: Path, job_id: str, max_bytes: int) -> Path |
     return None
 
 
-def _make_preview_source(src: str, preview_id: str) -> Path:
-    out = DATA / f"{preview_id}_preview_src.mp4"
+def _make_preview_source(src: str) -> Path:
+    out = _storage_dir_for(src) / "preview_source.mp4"
     try:
         r = subprocess.run(
             [
@@ -505,9 +523,10 @@ def _make_preview_source(src: str, preview_id: str) -> Path:
 
 
 def _process_preview_job(job: PreviewJob) -> None:
-    preview_src = _make_preview_source(job.src, job.id)
+    preview_src = _make_preview_source(job.src)
+    storage_dir = _storage_dir_for(job.src)
     for index, preset in enumerate(PRESETS, start=1):
-        out_path = DATA / f"{job.id}_{preset.id}_preview.mp4"
+        out_path = storage_dir / f"{preset.id}_preview.mp4"
         _run_comfy_video(
             src=str(preview_src),
             workflow=preset.preview_workflow,
@@ -606,10 +625,13 @@ async def create_preview_job(
         return JSONResponse({"error": "email required"}, status_code=400)
 
     jid = uuid.uuid4().hex[:8]
-    src = DATA / f"{jid}_src.mp4"
+    session_id = jid
+    session_dir = _session_dir(session_id)
+    src = session_dir / "source.mp4"
     src.write_bytes(await file.read())
     job = PreviewJob(
         id=jid,
+        session_id=session_id,
         name=name,
         email=email.strip(),
         consent=consent,
@@ -621,6 +643,7 @@ async def create_preview_job(
     )
     meta = {
         "preview_job_id": jid,
+        "session_id": session_id,
         "name": name,
         "email": email.strip(),
         "consent": consent,
@@ -631,11 +654,11 @@ async def create_preview_job(
         "source_video": str(src),
         "created": job.created,
     }
-    (DATA / f"{jid}_preview_meta.json").write_text(json.dumps(meta, indent=2))
+    (session_dir / "preview_meta.json").write_text(json.dumps(meta, indent=2))
     with _lock:
         _preview_jobs[jid] = job
     _preview_work.put(jid)
-    return {"preview_job_id": jid}
+    return {"preview_job_id": jid, "session_id": session_id}
 
 
 @app.get("/preview-jobs/{jid}")
@@ -690,6 +713,7 @@ async def finalize_preview_job(jid: str, preset_id: str = Form("")):
     job_id = uuid.uuid4().hex[:8]
     job = Job(
         id=job_id,
+        session_id=preview.session_id,
         name=preview.name,
         email=preview.email,
         consent=preview.consent,
@@ -702,6 +726,7 @@ async def finalize_preview_job(jid: str, preset_id: str = Form("")):
     meta = {
         "job_id": job_id,
         "preview_job_id": jid,
+        "session_id": preview.session_id,
         "name": preview.name,
         "email": preview.email,
         "consent": preview.consent,
@@ -715,11 +740,13 @@ async def finalize_preview_job(jid: str, preset_id: str = Form("")):
         "source_video": preview.src,
         "created": job.created,
     }
-    (DATA / f"{job_id}_meta.json").write_text(json.dumps(meta, indent=2))
+    (_storage_dir_for(preview.src) / f"{job_id}_meta.json").write_text(
+        json.dumps(meta, indent=2)
+    )
     with _lock:
         _jobs[job_id] = job
     _work.put(job_id)
-    return {"job_id": job_id}
+    return {"job_id": job_id, "session_id": preview.session_id}
 
 
 @app.post("/jobs")
@@ -741,10 +768,13 @@ async def create_job(
     requested_workflow = workflow
     effective_workflow = _effective_workflow(workflow)
     jid = uuid.uuid4().hex[:8]
-    src = DATA / f"{jid}_src.mp4"
+    session_id = jid
+    session_dir = _session_dir(session_id)
+    src = session_dir / "source.mp4"
     src.write_bytes(await file.read())
     job = Job(
         id=jid,
+        session_id=session_id,
         name=name,
         email=email.strip(),
         consent=consent,
@@ -756,6 +786,7 @@ async def create_job(
     )
     meta = {
         "job_id": jid,
+        "session_id": session_id,
         "name": name,
         "email": email.strip(),
         "consent": consent,
@@ -767,11 +798,11 @@ async def create_job(
         "source_video": str(src),
         "created": job.created,
     }
-    (DATA / f"{jid}_meta.json").write_text(json.dumps(meta, indent=2))
+    (session_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     with _lock:
         _jobs[jid] = job
     _work.put(jid)
-    return {"job_id": jid}
+    return {"job_id": jid, "session_id": session_id}
 
 
 @app.get("/jobs/{jid}")
