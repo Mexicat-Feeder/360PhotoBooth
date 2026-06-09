@@ -35,7 +35,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
       child: Column(
         children: [
           Text(
-            "Looking good, ${flow.name}!",
+            flow.hasName
+                ? 'Looking good, ${flow.displayName}!'
+                : 'Looking good!',
             style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),

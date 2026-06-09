@@ -40,12 +40,14 @@ class ResultScreen extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            'Here’s your AI video, ${flow.name}! 🎨',
+            flow.hasName
+                ? 'Here is your AI video, ${flow.displayName}!'
+                : 'Here is your AI video!',
             style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           const Text(
-            'Painted by AMD Ryzen AI — Van Gogh style',
+            'Rendered by AMD Ryzen AI',
             style: TextStyle(fontSize: 16, color: Colors.white60),
           ),
           const SizedBox(height: 16),

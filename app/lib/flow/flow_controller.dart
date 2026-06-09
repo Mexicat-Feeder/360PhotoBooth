@@ -40,6 +40,9 @@ class FlowController extends ChangeNotifier {
   String email = '';
   bool consent = false;
 
+  bool get hasName => name.trim().isNotEmpty;
+  String get displayName => name.trim().isEmpty ? 'there' : name.trim();
+
   // capture config
   SpinDir dir = SpinDir.ccw;
   int speed = 5;

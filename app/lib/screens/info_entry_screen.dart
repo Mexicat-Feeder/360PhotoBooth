@@ -17,10 +17,7 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _consent = false;
 
-  bool get _valid =>
-      _name.text.trim().isNotEmpty &&
-      _email.text.trim().contains('@') &&
-      _consent;
+  bool get _valid => _email.text.trim().contains('@') && _consent;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +45,7 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
                 const SizedBox(height: 32),
                 _field(
                   _name,
-                  'First name',
+                  'First name (optional)',
                   Icons.person_outline,
                   cap: TextCapitalization.words,
                 ),
@@ -92,7 +89,7 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
                 if (!_valid)
                   const Center(
                     child: Text(
-                      'Enter name, email, and consent to continue',
+                      'Enter email and consent to continue',
                       style: TextStyle(color: Colors.white38, fontSize: 13),
                     ),
                   ),

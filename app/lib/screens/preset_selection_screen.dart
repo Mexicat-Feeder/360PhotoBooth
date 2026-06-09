@@ -27,7 +27,9 @@ class _PresetSelectionScreenState extends State<PresetSelectionScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Choose a look, ${flow.name}',
+            flow.hasName
+                ? 'Choose a look, ${flow.displayName}'
+                : 'Choose a look',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
           ),

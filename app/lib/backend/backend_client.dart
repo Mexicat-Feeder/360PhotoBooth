@@ -187,8 +187,14 @@ class BackendClient {
     }
   }
 
-  String absolute(String pathOrUrl) =>
-      pathOrUrl.startsWith('http') ? pathOrUrl : '$baseUrl$pathOrUrl';
+  String absolute(String pathOrUrl) {
+    final base = Uri.parse(baseUrl);
+    final parsed = Uri.tryParse(pathOrUrl);
+    if (parsed != null && parsed.hasScheme) {
+      return base.replace(path: parsed.path, query: parsed.query).toString();
+    }
+    return base.resolve(pathOrUrl).toString();
+  }
 
   Future<List<int>> download(String url) async {
     final r = await http.get(Uri.parse(url));
