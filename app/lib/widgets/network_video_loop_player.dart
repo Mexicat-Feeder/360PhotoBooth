@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 import '../theme.dart';
+import 'video_loop_player.dart';
 
 class NetworkVideoLoopPlayer extends StatefulWidget {
   const NetworkVideoLoopPlayer({super.key, required this.url});
@@ -18,6 +19,7 @@ class NetworkVideoLoopPlayer extends StatefulWidget {
 
 class _NetworkVideoLoopPlayerState extends State<NetworkVideoLoopPlayer> {
   VideoPlayerController? _controller;
+  String? _framePreviewPath;
   String? _error;
   int _loadToken = 0;
 
@@ -41,6 +43,7 @@ class _NetworkVideoLoopPlayerState extends State<NetworkVideoLoopPlayer> {
     if (mounted) {
       setState(() {
         _controller = null;
+        _framePreviewPath = null;
         _error = null;
       });
     }
@@ -58,6 +61,12 @@ class _NetworkVideoLoopPlayerState extends State<NetworkVideoLoopPlayer> {
 
       final file = File(_cachePathFor(uri));
       await file.writeAsBytes(response.bodyBytes, flush: true);
+
+      if (_usesFramePreview) {
+        if (!mounted || token != _loadToken) return;
+        setState(() => _framePreviewPath = file.path);
+        return;
+      }
 
       final controller = VideoPlayerController.file(file);
       await controller.initialize();
@@ -77,6 +86,8 @@ class _NetworkVideoLoopPlayerState extends State<NetworkVideoLoopPlayer> {
     }
   }
 
+  bool get _usesFramePreview => Platform.isWindows || Platform.isLinux;
+
   String _cachePathFor(Uri uri) {
     final key = uri.toString().hashCode.toUnsigned(32).toRadixString(16);
     return '${Directory.systemTemp.path}${Platform.pathSeparator}'
@@ -86,9 +97,18 @@ class _NetworkVideoLoopPlayerState extends State<NetworkVideoLoopPlayer> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
+    final framePreviewPath = _framePreviewPath;
     if (_error != null) {
       return const Center(
         child: Icon(Icons.videocam_off, color: Colors.white38, size: 34),
+      );
+    }
+    if (framePreviewPath != null) {
+      return VideoLoopPlayer(
+        key: ValueKey(framePreviewPath),
+        path: framePreviewPath,
+        fps: 12,
+        fit: BoxFit.contain,
       );
     }
     if (controller == null || !controller.value.isInitialized) {
@@ -97,7 +117,7 @@ class _NetworkVideoLoopPlayerState extends State<NetworkVideoLoopPlayer> {
       );
     }
     return FittedBox(
-      fit: BoxFit.cover,
+      fit: BoxFit.contain,
       child: SizedBox(
         width: controller.value.size.width,
         height: controller.value.size.height,

@@ -22,100 +22,121 @@ class _PresetSelectionScreenState extends State<PresetSelectionScreen> {
     final selected = flow.selectedPresetId;
     final activePreset = _selectedPreset(presets, selected);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            flow.hasName
-                ? 'Choose a look, ${flow.displayName}'
-                : 'Choose a look',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 700;
+        final horizontalPadding = constraints.maxWidth < 430 ? 16.0 : 24.0;
+        final previewHeight = (constraints.maxHeight * 0.46).clamp(
+          220.0,
+          isWide ? 420.0 : 460.0,
+        );
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            8,
+            horizontalPadding,
+            24,
           ),
-          const SizedBox(height: 6),
-          const Text(
-            'Tap each look to preview it. The selected look renders at final quality.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.white60),
-          ),
-          const SizedBox(height: 14),
-          Expanded(
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: 9 / 16,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: Brand.glow(0.35, blur: 42),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: activePreset?.previewUrl == null
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: Brand.redBright,
-                            ),
-                          )
-                        : NetworkVideoLoopPlayer(
-                            key: ValueKey(activePreset!.previewUrl),
-                            url: activePreset.previewUrl!,
-                          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                flow.hasName
+                    ? 'Choose a look, ${flow.displayName}'
+                    : 'Choose a look',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Tap each look to preview it. The selected look renders at final quality.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.white60),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: previewHeight,
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: 9 / 16,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: Brand.glow(0.35, blur: 42),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: activePreset?.previewUrl == null
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                  color: Brand.redBright,
+                                ),
+                              )
+                            : NetworkVideoLoopPlayer(
+                                key: ValueKey(activePreset!.previewUrl),
+                                url: activePreset.previewUrl!,
+                              ),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            activePreset?.name ?? '',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            activePreset?.description ?? '',
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: Colors.white54),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 128,
-            child: GridView.builder(
-              itemCount: presets.length,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 3.25,
+              const SizedBox(height: 12),
+              Text(
+                activePreset?.name ?? '',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-              itemBuilder: (context, index) {
-                final preset = presets[index];
-                return _PresetButton(
-                  preset: preset,
-                  selected: selected == preset.id,
-                  onTap: () =>
-                      setState(() => flow.selectedPresetId = preset.id),
-                );
-              },
-            ),
+              const SizedBox(height: 3),
+              Text(
+                activePreset?.description ?? '',
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Colors.white54),
+              ),
+              const SizedBox(height: 14),
+              GridView.builder(
+                itemCount: presets.length,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: isWide ? 4 : 2,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: isWide ? 2.45 : 3.25,
+                ),
+                itemBuilder: (context, index) {
+                  final preset = presets[index];
+                  return _PresetButton(
+                    preset: preset,
+                    selected: selected == preset.id,
+                    onTap: () =>
+                        setState(() => flow.selectedPresetId = preset.id),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              GradientButton(
+                label: 'SEND THIS LOOK',
+                icon: Icons.mail_outline,
+                expand: true,
+                onPressed: selected == null
+                    ? null
+                    : () => flow.selectPresetAndProcess(selected),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          GradientButton(
-            label: 'SEND THIS LOOK',
-            icon: Icons.mail_outline,
-            expand: true,
-            onPressed: selected == null
-                ? null
-                : () => flow.selectPresetAndProcess(selected),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

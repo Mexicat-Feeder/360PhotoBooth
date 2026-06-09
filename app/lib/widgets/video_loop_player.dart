@@ -10,9 +10,16 @@ import '../theme.dart';
 /// images. Lightweight, no video_player/libmpv dependency — fine for the short
 /// stylized booth clip (no audio needed). Loops forever.
 class VideoLoopPlayer extends StatefulWidget {
-  const VideoLoopPlayer({super.key, required this.path, this.fps = 12});
+  const VideoLoopPlayer({
+    super.key,
+    required this.path,
+    this.fps = 12,
+    this.fit = BoxFit.cover,
+  });
+
   final String path;
   final int fps;
+  final BoxFit fit;
 
   @override
   State<VideoLoopPlayer> createState() => _VideoLoopPlayerState();
@@ -34,19 +41,27 @@ class _VideoLoopPlayerState extends State<VideoLoopPlayer> {
     try {
       final dir = Directory.systemTemp.createTempSync('booth_play_');
       final res = await Process.run('ffmpeg', [
-        '-hide_banner', '-loglevel', 'error', '-i', widget.path,
-        '-vf', 'fps=${widget.fps}', '${dir.path}/f_%03d.jpg',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        widget.path,
+        '-vf',
+        'fps=${widget.fps}',
+        '${dir.path}/f_%03d.jpg',
       ]);
+      if (!mounted) return;
       if (res.exitCode != 0) {
         setState(() => _error = 'decode failed');
         return;
       }
-      final files = dir
-          .listSync()
-          .whereType<File>()
-          .where((f) => f.path.endsWith('.jpg'))
-          .toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
+      final files =
+          dir
+              .listSync()
+              .whereType<File>()
+              .where((f) => f.path.endsWith('.jpg'))
+              .toList()
+            ..sort((a, b) => a.path.compareTo(b.path));
       for (final f in files) {
         _frames.add(f.readAsBytesSync());
       }
@@ -54,12 +69,15 @@ class _VideoLoopPlayerState extends State<VideoLoopPlayer> {
         setState(() => _error = 'no frames');
         return;
       }
-      _t = Timer.periodic(
-        Duration(milliseconds: (1000 / widget.fps).round()),
-        (_) => setState(() => _i = (_i + 1) % _frames.length),
-      );
+      _t = Timer.periodic(Duration(milliseconds: (1000 / widget.fps).round()), (
+        _,
+      ) {
+        if (!mounted) return;
+        setState(() => _i = (_i + 1) % _frames.length);
+      });
       setState(() {});
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = '$e');
     }
   }
@@ -68,14 +86,24 @@ class _VideoLoopPlayerState extends State<VideoLoopPlayer> {
   Widget build(BuildContext context) {
     if (_error != null) {
       return Center(
-          child: Text('preview unavailable',
-              style: const TextStyle(color: Colors.white54)));
+        child: Text(
+          'preview unavailable',
+          style: const TextStyle(color: Colors.white54),
+        ),
+      );
     }
     if (_frames.isEmpty) {
-      return const Center(child: CircularProgressIndicator(color: Brand.redBright));
+      return const Center(
+        child: CircularProgressIndicator(color: Brand.redBright),
+      );
     }
-    return Image.memory(_frames[_i], gaplessPlayback: true, fit: BoxFit.cover,
-        width: double.infinity, height: double.infinity);
+    return Image.memory(
+      _frames[_i],
+      gaplessPlayback: true,
+      fit: widget.fit,
+      width: double.infinity,
+      height: double.infinity,
+    );
   }
 
   @override
