@@ -20,6 +20,7 @@ class _PresetSelectionScreenState extends State<PresetSelectionScreen> {
     final flow = widget.flow;
     final presets = flow.presetPreviews;
     final selected = flow.selectedPresetId;
+    final activePreset = _selectedPreset(presets, selected);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
@@ -35,23 +36,67 @@ class _PresetSelectionScreenState extends State<PresetSelectionScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'These are fast previews. The selected look renders at final quality.',
+            'Tap each look to preview it. The selected look renders at final quality.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, color: Colors.white60),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           Expanded(
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: 9 / 16,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: Brand.glow(0.35, blur: 42),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: activePreset?.previewUrl == null
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: Brand.redBright,
+                            ),
+                          )
+                        : NetworkVideoLoopPlayer(
+                            key: ValueKey(activePreset!.previewUrl),
+                            url: activePreset.previewUrl!,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            activePreset?.name ?? '',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            activePreset?.description ?? '',
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: Colors.white54),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 128,
             child: GridView.builder(
               itemCount: presets.length,
+              physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 0.62,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 3.25,
               ),
               itemBuilder: (context, index) {
                 final preset = presets[index];
-                return _PresetCard(
+                return _PresetButton(
                   preset: preset,
                   selected: selected == preset.id,
                   onTap: () =>
@@ -60,7 +105,7 @@ class _PresetSelectionScreenState extends State<PresetSelectionScreen> {
               },
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           GradientButton(
             label: 'SEND THIS LOOK',
             icon: Icons.mail_outline,
@@ -73,10 +118,20 @@ class _PresetSelectionScreenState extends State<PresetSelectionScreen> {
       ),
     );
   }
+
+  PresetPreview? _selectedPreset(
+    List<PresetPreview> presets,
+    String? selectedId,
+  ) {
+    for (final preset in presets) {
+      if (preset.id == selectedId) return preset;
+    }
+    return presets.isEmpty ? null : presets.first;
+  }
 }
 
-class _PresetCard extends StatelessWidget {
-  const _PresetCard({
+class _PresetButton extends StatelessWidget {
+  const _PresetButton({
     required this.preset,
     required this.selected,
     required this.onTap,
@@ -91,7 +146,7 @@ class _PresetCard extends StatelessWidget {
     return Material(
       color: selected
           ? Brand.red.withValues(alpha: 0.26)
-          : Brand.surface.withValues(alpha: 0.78),
+          : Brand.surface.withValues(alpha: 0.82),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -105,54 +160,27 @@ class _PresetCard extends StatelessWidget {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
               children: [
+                Icon(
+                  selected
+                      ? Icons.play_circle_fill
+                      : Icons.radio_button_unchecked,
+                  color: selected ? Colors.greenAccent : Colors.white30,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: ColoredBox(
-                      color: Colors.black,
-                      child: preset.previewUrl == null
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: Brand.redBright,
-                              ),
-                            )
-                          : NetworkVideoLoopPlayer(url: preset.previewUrl!),
+                  child: Text(
+                    preset.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        preset.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      selected
-                          ? Icons.check_circle
-                          : Icons.radio_button_unchecked,
-                      color: selected ? Colors.greenAccent : Colors.white30,
-                      size: 20,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  preset.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: Colors.white54),
                 ),
               ],
             ),
