@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import urllib.parse
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 import requests
@@ -41,7 +42,7 @@ class ComfyClient:
         with open(path, "rb") as f:
             r = requests.post(
                 f"{self.base}/upload/image",
-                files={"image": (path.split("/")[-1], f, "video/mp4")},
+                files={"image": (Path(path).name, f, "video/mp4")},
                 data={"type": "input", "overwrite": "true"},
                 timeout=120,
             )

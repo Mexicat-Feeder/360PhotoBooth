@@ -33,7 +33,6 @@ from pathlib import Path
 from fastapi import FastAPI, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from . import catalog
 from .comfy_client import ComfyClient, Progress
 
 
@@ -60,6 +59,7 @@ _load_env_file()
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188")
 WORKFLOW_DIR = Path(os.environ.get("WORKFLOW_DIR", "booth_backend/workflows"))
 DEFAULT_WORKFLOW = os.environ.get("WORKFLOW", "vangogh_vid2vid")
+FORCE_WORKFLOW = os.environ.get("FORCE_WORKFLOW", "").strip()
 PORT = int(os.environ.get("BOOTH_PORT", "8000"))
 DATA = Path(os.environ.get("BOOTH_DATA", "booth_backend/_data"))
 DATA.mkdir(parents=True, exist_ok=True)
@@ -96,14 +96,71 @@ class Job:
     created: float = field(default_factory=time.time)
 
 
+@dataclass(frozen=True)
+class Preset:
+    id: str
+    name: str
+    description: str
+    preview_workflow: str
+    final_workflow: str
+
+
+PRESETS = [
+    Preset(
+        id="cinematic_glow",
+        name="Cinematic Glow",
+        description="Soft bloom, polished contrast, and a clean event-video look.",
+        preview_workflow="preset_cinematic_glow_preview",
+        final_workflow="preset_cinematic_glow_final",
+    ),
+    Preset(
+        id="neon_edge",
+        name="Neon Edge",
+        description="Bright contour lines blended back over the original footage.",
+        preview_workflow="preset_neon_edge_preview",
+        final_workflow="preset_neon_edge_final",
+    ),
+    Preset(
+        id="comic_pop",
+        name="Comic Pop",
+        description="Reduced colors, crisp edges, and a punchy graphic finish.",
+        preview_workflow="preset_comic_pop_preview",
+        final_workflow="preset_comic_pop_final",
+    ),
+    Preset(
+        id="chrome_negative",
+        name="Chrome Negative",
+        description="High-contrast inverted chrome with sharp futuristic detail.",
+        preview_workflow="preset_chrome_negative_preview",
+        final_workflow="preset_chrome_negative_final",
+    ),
+]
+PRESET_BY_ID = {p.id: p for p in PRESETS}
+
+
+@dataclass
+class PreviewJob:
+    id: str
+    name: str
+    email: str
+    consent: bool
+    requested_workflow: str
+    direction: str
+    speed: int
+    duration_seconds: int
+    src: str
+    status: str = "queued"
+    progress: float = 0.0
+    previews: dict[str, str] = field(default_factory=dict)
+    error: str | None = None
+    created: float = field(default_factory=time.time)
+
+
 _jobs: dict[str, Job] = {}
+_preview_jobs: dict[str, PreviewJob] = {}
 _lock = threading.Lock()
 _work: "queue.Queue[str]" = queue.Queue()
-
-# cache of ComfyUI's registered node types (for per-look availability)
-_nodes_cache: "set[str] | None" = None
-_nodes_at: float = 0.0
-_nodes_lock = threading.Lock()
+_preview_work: "queue.Queue[str]" = queue.Queue()
 
 
 def _lan_ip() -> str:
@@ -123,13 +180,125 @@ def _patch_workflow(wf: dict, input_name: str, job_id: str) -> dict:
     for node in wf.values():
         ct = node.get("class_type", "")
         ins = node.setdefault("inputs", {})
-        if ct in ("VHS_LoadVideo", "VHS_LoadVideoPath", "LoadVideo"):
+        if ct in ("VHS_LoadVideo", "VHS_LoadVideoPath"):
             # VHS uses "video" for the uploaded filename
             if "video" in ins:
                 ins["video"] = input_name
+        if ct == "LoadVideo" and "file" in ins:
+            ins["file"] = input_name
         if ct in ("VHS_VideoCombine",) and "filename_prefix" in ins:
             ins["filename_prefix"] = f"booth_{job_id}"
+        if ct == "SaveVideo" and "filename_prefix" in ins:
+            ins["filename_prefix"] = f"booth_{job_id}"
     return wf
+
+
+def _preset_parts(workflow: str) -> tuple[str, str] | None:
+    if not workflow.startswith("preset_"):
+        return None
+    for suffix in ("_preview", "_final"):
+        if workflow.endswith(suffix):
+            preset_id = workflow[len("preset_"):-len(suffix)]
+            if preset_id in PRESET_BY_ID:
+                return preset_id, suffix[1:]
+    return None
+
+
+def _native_preset_workflow(preset_id: str, mode: str) -> dict:
+    if preset_id not in PRESET_BY_ID:
+        raise RuntimeError(f"unknown preset: {preset_id}")
+    if mode not in ("preview", "final"):
+        raise RuntimeError(f"unknown preset mode: {mode}")
+
+    # Keep final output attachment-safe for email while still rendering a
+    # higher quality pass than the instant preview.
+    width, height = (360, 640) if mode == "preview" else (720, 1280)
+    wf: dict[str, dict] = {
+        "1": {"class_type": "LoadVideo", "inputs": {"file": "PLACEHOLDER.mp4"}},
+        "2": {"class_type": "GetVideoComponents", "inputs": {"video": ["1", 0]}},
+        "3": {
+            "class_type": "ImageScale",
+            "inputs": {
+                "image": ["2", 0],
+                "upscale_method": "lanczos",
+                "width": width,
+                "height": height,
+                "crop": "center",
+            },
+        },
+    }
+
+    next_id = 4
+
+    def add(class_type: str, inputs: dict) -> str:
+        nonlocal next_id
+        node_id = str(next_id)
+        wf[node_id] = {"class_type": class_type, "inputs": inputs}
+        next_id += 1
+        return node_id
+
+    if preset_id == "cinematic_glow":
+        blur = add("ImageBlur", {"image": ["3", 0], "blur_radius": 7, "sigma": 2.2})
+        blend = add(
+            "ImageBlend",
+            {
+                "image1": ["3", 0],
+                "image2": [blur, 0],
+                "blend_factor": 0.35,
+                "blend_mode": "screen",
+            },
+        )
+        effect = add("AdjustContrast", {"images": [blend, 0], "factor": 1.12})
+    elif preset_id == "neon_edge":
+        edges = add("Canny", {"image": ["3", 0], "low_threshold": 0.12, "high_threshold": 0.32})
+        hot_edges = add("ImageInvert", {"image": [edges, 0]})
+        effect = add(
+            "ImageBlend",
+            {
+                "image1": ["3", 0],
+                "image2": [hot_edges, 0],
+                "blend_factor": 0.42,
+                "blend_mode": "screen",
+            },
+        )
+    elif preset_id == "comic_pop":
+        quant = add("ImageQuantize", {"image": ["3", 0], "colors": 24, "dither": "bayer-4"})
+        contrast = add("AdjustContrast", {"images": [quant, 0], "factor": 1.35})
+        effect = add(
+            "ImageSharpen",
+            {"image": [contrast, 0], "sharpen_radius": 2, "sigma": 0.8, "alpha": 1.45},
+        )
+    else:
+        inverted = add("ImageInvert", {"image": ["3", 0]})
+        contrast = add("AdjustContrast", {"images": [inverted, 0], "factor": 1.28})
+        effect = add(
+            "ImageSharpen",
+            {"image": [contrast, 0], "sharpen_radius": 2, "sigma": 0.75, "alpha": 1.7},
+        )
+
+    video = add("CreateVideo", {"images": [effect, 0], "fps": ["2", 2]})
+    add(
+        "SaveVideo",
+        {
+            "video": [video, 0],
+            "filename_prefix": f"booth_{preset_id}_{mode}",
+            "format": "mp4",
+            "codec": "h264",
+        },
+    )
+    return wf
+
+
+def _load_workflow(workflow: str) -> dict:
+    parts = _preset_parts(workflow)
+    if parts is not None:
+        preset_id, mode = parts
+        return _native_preset_workflow(preset_id, mode)
+    workflow_path = _workflow_path(workflow)
+    if not workflow_path.exists():
+        raise RuntimeError(f"workflow not found: {workflow_path} "
+                           "(author it in ComfyUI and export API JSON)")
+    return json.loads(workflow_path.read_text())
 
 
 def _workflow_path(workflow: str) -> Path:
@@ -177,15 +346,24 @@ def _send_email(job: Job) -> None:
     )
 
     max_bytes = int(EMAIL_ATTACH_MAX_MB * 1024 * 1024)
-    if result_path.exists() and result_path.stat().st_size <= max_bytes:
-        ctype, _ = mimetypes.guess_type(result_path.name)
-        maintype, subtype = (ctype or "video/mp4").split("/", 1)
-        msg.add_attachment(
-            result_path.read_bytes(),
-            maintype=maintype,
-            subtype=subtype,
-            filename=f"booth-{job.id}.mp4",
-        )
+    attachment_path = _attachment_path_for_email(result_path, job.id, max_bytes)
+    if attachment_path is None:
+        with _lock:
+            job.email_status = "failed"
+            job.email_error = (
+                f"generated video is too large to attach "
+                f"(limit {EMAIL_ATTACH_MAX_MB:g} MB)"
+            )
+        return
+
+    ctype, _ = mimetypes.guess_type(attachment_path.name)
+    maintype, subtype = (ctype or "video/mp4").split("/", 1)
+    msg.add_attachment(
+        attachment_path.read_bytes(),
+        maintype=maintype,
+        subtype=subtype,
+        filename=f"booth-{job.id}.mp4",
+    )
 
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60) as smtp:
@@ -201,24 +379,28 @@ def _send_email(job: Job) -> None:
             job.email_error = str(exc)
 
 
+def _run_comfy_video(
+    *,
+    src: str,
+    workflow: str,
+    client_id: str,
+    out_path: Path,
+    on_progress=None,
+    on_preview=None,
+) -> Path:
+    wf = _load_workflow(workflow)
+    input_name = comfy.upload_video(src)
+    wf = _patch_workflow(wf, input_name, client_id)
+    outputs = comfy.run_and_wait(wf, client_id, on_progress, on_preview)
+    found = ComfyClient.find_output_video(outputs)
+    if not found:
+        raise RuntimeError("ComfyUI produced no video output")
+    fn, sub = found
+    out_path.write_bytes(comfy.view_bytes(fn, sub, "output"))
+    return out_path
+
+
 def _process(job: Job) -> None:
-    workflow_path = _workflow_path(job.workflow)
-    if not workflow_path.exists():
-        raise RuntimeError(f"workflow not found: {workflow_path} "
-                           "(author it in ComfyUI and export API JSON)")
-    # Pre-flight: fail fast with a friendly message if this look needs a custom
-    # node ComfyUI doesn't have, rather than a cryptic /prompt 400 mid-run.
-    miss = catalog.missing_nodes(
-        Path(job.workflow).stem, _installed_nodes(), WORKFLOW_DIR)
-    if miss:
-        look = catalog.CATALOG_BY_ID.get(Path(job.workflow).stem)
-        need = (look.needs if look and look.needs else ", ".join(miss))
-        raise RuntimeError(
-            f"This look isn't available on the booth yet (missing {need}). "
-            "Pick another style, or install the node in ComfyUI.")
-    wf = json.loads(workflow_path.read_text())
-    input_name = comfy.upload_video(job.src)
-    wf = _patch_workflow(wf, input_name, job.id)
     client_id = job.id
 
     def on_progress(p: Progress) -> None:
@@ -229,19 +411,20 @@ def _process(job: Job) -> None:
         with _lock:
             job.preview = jpeg
 
-    outputs = comfy.run_and_wait(wf, client_id, on_progress, on_preview)
-    found = ComfyClient.find_output_video(outputs)
-    if not found:
-        raise RuntimeError("ComfyUI produced no video output")
-    fn, sub = found
-    data = comfy.view_bytes(fn, sub, "output")
     raw_path = DATA / f"{job.id}_raw.mp4"
-    raw_path.write_bytes(data)
+    _run_comfy_video(
+        src=job.src,
+        workflow=job.workflow,
+        client_id=client_id,
+        out_path=raw_path,
+        on_progress=on_progress,
+        on_preview=on_preview,
+    )
     out_path = DATA / f"{job.id}.mp4"
     # motion-interpolate the low-fps AI frames up to a smooth fps (ffmpeg on the
     # host; in-graph RIFE is broken on this ROCm build)
     if not _smooth(raw_path, out_path):
-        out_path.write_bytes(data)  # fallback: serve the raw clip
+        out_path.write_bytes(raw_path.read_bytes())  # fallback: serve the raw clip
     with _lock:
         job.result = str(out_path)
         job.progress = 1.0
@@ -253,13 +436,87 @@ def _smooth(src: Path, dst: Path, fps: int = 16) -> bool:
         r = subprocess.run(
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(src),
              "-vf", f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:vsbmc=1",
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-             "-y", str(dst)],
+             "-c:v", "libx264", "-preset", "medium", "-crf", "24",
+             "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-y", str(dst)],
             timeout=120,
         )
         return r.returncode == 0 and dst.exists()
     except Exception:  # noqa: BLE001
         return False
+
+
+def _attachment_path_for_email(src: Path, job_id: str, max_bytes: int) -> Path | None:
+    if not src.exists():
+        return None
+    if src.stat().st_size <= max_bytes:
+        return src
+
+    dst = DATA / f"{job_id}_email.mp4"
+    for crf in (26, 30, 34):
+        try:
+            if dst.exists():
+                dst.unlink()
+            r = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error",
+                    "-i", str(src),
+                    "-vf",
+                    "scale=720:1280:force_original_aspect_ratio=decrease:"
+                    "force_divisible_by=2",
+                    "-an",
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", str(crf),
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    "-y", str(dst),
+                ],
+                timeout=180,
+            )
+            if r.returncode == 0 and dst.exists() and dst.stat().st_size <= max_bytes:
+                return dst
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _make_preview_source(src: str, preview_id: str) -> Path:
+    out = DATA / f"{preview_id}_preview_src.mp4"
+    try:
+        r = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-i", src,
+                "-t", "1.6",
+                "-vf",
+                "fps=8,scale=360:640:force_original_aspect_ratio=increase,"
+                "crop=360:640",
+                "-an",
+                "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", "-y", str(out),
+            ],
+            timeout=60,
+        )
+        if r.returncode == 0 and out.exists():
+            return out
+    except Exception:  # noqa: BLE001
+        pass
+    return Path(src)
+
+
+def _process_preview_job(job: PreviewJob) -> None:
+    preview_src = _make_preview_source(job.src, job.id)
+    for index, preset in enumerate(PRESETS, start=1):
+        out_path = DATA / f"{job.id}_{preset.id}_preview.mp4"
+        _run_comfy_video(
+            src=str(preview_src),
+            workflow=preset.preview_workflow,
+            client_id=f"{job.id}_{preset.id}_preview",
+            out_path=out_path,
+        )
+        with _lock:
+            job.previews[preset.id] = str(out_path)
+            job.progress = round(index / len(PRESETS), 3)
 
 
 def _worker() -> None:
@@ -280,7 +537,189 @@ def _worker() -> None:
                 job.error = str(e)
 
 
+def _preview_worker() -> None:
+    while True:
+        jid = _preview_work.get()
+        job = _preview_jobs.get(jid)
+        if job is None:
+            continue
+        with _lock:
+            job.status = "generating"
+        try:
+            _process_preview_job(job)
+            with _lock:
+                job.status = "done"
+                job.progress = 1.0
+        except Exception as e:  # noqa: BLE001
+            with _lock:
+                job.status = "failed"
+                job.error = str(e)
+
+
 threading.Thread(target=_worker, daemon=True).start()
+threading.Thread(target=_preview_worker, daemon=True).start()
+
+
+def _effective_workflow(requested: str) -> str:
+    requested = (requested or "").strip()
+    if FORCE_WORKFLOW:
+        return FORCE_WORKFLOW
+    return requested or DEFAULT_WORKFLOW
+
+
+def _preset_payload(preview_id: str | None = None) -> list[dict]:
+    base = _public_base_url()
+    rows = []
+    for preset in PRESETS:
+        row = {
+            "id": preset.id,
+            "name": preset.name,
+            "description": preset.description,
+        }
+        if preview_id is not None:
+            row["preview_url"] = (
+                f"{base}/preview-jobs/{preview_id}/previews/{preset.id}"
+            )
+        rows.append(row)
+    return rows
+
+
+@app.get("/presets")
+async def presets():
+    return {"presets": _preset_payload()}
+
+
+@app.post("/preview-jobs")
+async def create_preview_job(
+    file: UploadFile,
+    name: str = Form(""),
+    email: str = Form(""),
+    consent: bool = Form(False),
+    workflow: str = Form(DEFAULT_WORKFLOW),
+    direction: str = Form(""),
+    speed: int = Form(0),
+    duration_seconds: int = Form(0),
+):
+    if not consent:
+        return JSONResponse({"error": "consent required"}, status_code=400)
+    if not email.strip():
+        return JSONResponse({"error": "email required"}, status_code=400)
+
+    jid = uuid.uuid4().hex[:8]
+    src = DATA / f"{jid}_src.mp4"
+    src.write_bytes(await file.read())
+    job = PreviewJob(
+        id=jid,
+        name=name,
+        email=email.strip(),
+        consent=consent,
+        requested_workflow=workflow,
+        direction=direction,
+        speed=speed,
+        duration_seconds=duration_seconds,
+        src=str(src),
+    )
+    meta = {
+        "preview_job_id": jid,
+        "name": name,
+        "email": email.strip(),
+        "consent": consent,
+        "requested_workflow": workflow,
+        "direction": direction,
+        "speed": speed,
+        "duration_seconds": duration_seconds,
+        "source_video": str(src),
+        "created": job.created,
+    }
+    (DATA / f"{jid}_preview_meta.json").write_text(json.dumps(meta, indent=2))
+    with _lock:
+        _preview_jobs[jid] = job
+    _preview_work.put(jid)
+    return {"preview_job_id": jid}
+
+
+@app.get("/preview-jobs/{jid}")
+async def preview_job_status(jid: str):
+    job = _preview_jobs.get(jid)
+    if job is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    with _lock:
+        presets_payload = []
+        for preset in PRESETS:
+            row = {
+                "id": preset.id,
+                "name": preset.name,
+                "description": preset.description,
+                "preview_url": None,
+            }
+            if preset.id in job.previews:
+                row["preview_url"] = (
+                    f"{_public_base_url()}/preview-jobs/{jid}/previews/{preset.id}"
+                )
+            presets_payload.append(row)
+        return {
+            "status": job.status,
+            "progress": job.progress,
+            "error": job.error,
+            "presets": presets_payload,
+        }
+
+
+@app.get("/preview-jobs/{jid}/previews/{preset_id}")
+async def preview_job_video(jid: str, preset_id: str):
+    job = _preview_jobs.get(jid)
+    if job is None or preset_id not in job.previews:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return Response(
+        content=Path(job.previews[preset_id]).read_bytes(),
+        media_type="video/mp4",
+    )
+
+
+@app.post("/preview-jobs/{jid}/finalize")
+async def finalize_preview_job(jid: str, preset_id: str = Form("")):
+    preview = _preview_jobs.get(jid)
+    preset = PRESET_BY_ID.get(preset_id)
+    if preview is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if preset is None:
+        return JSONResponse({"error": "unknown preset"}, status_code=400)
+    if preview.status != "done":
+        return JSONResponse({"error": "previews not ready"}, status_code=409)
+
+    job_id = uuid.uuid4().hex[:8]
+    job = Job(
+        id=job_id,
+        name=preview.name,
+        email=preview.email,
+        consent=preview.consent,
+        workflow=preset.final_workflow,
+        direction=preview.direction,
+        speed=preview.speed,
+        duration_seconds=preview.duration_seconds,
+        src=preview.src,
+    )
+    meta = {
+        "job_id": job_id,
+        "preview_job_id": jid,
+        "name": preview.name,
+        "email": preview.email,
+        "consent": preview.consent,
+        "workflow": preset.final_workflow,
+        "preset_id": preset.id,
+        "preset_name": preset.name,
+        "requested_workflow": preview.requested_workflow,
+        "direction": preview.direction,
+        "speed": preview.speed,
+        "duration_seconds": preview.duration_seconds,
+        "source_video": preview.src,
+        "created": job.created,
+    }
+    (DATA / f"{job_id}_meta.json").write_text(json.dumps(meta, indent=2))
+    with _lock:
+        _jobs[job_id] = job
+    _work.put(job_id)
+    return {"job_id": job_id}
 
 
 @app.post("/jobs")
@@ -299,6 +738,8 @@ async def create_job(
     if not email.strip():
         return JSONResponse({"error": "email required"}, status_code=400)
 
+    requested_workflow = workflow
+    effective_workflow = _effective_workflow(workflow)
     jid = uuid.uuid4().hex[:8]
     src = DATA / f"{jid}_src.mp4"
     src.write_bytes(await file.read())
@@ -307,7 +748,7 @@ async def create_job(
         name=name,
         email=email.strip(),
         consent=consent,
-        workflow=workflow,
+        workflow=effective_workflow,
         direction=direction,
         speed=speed,
         duration_seconds=duration_seconds,
@@ -318,7 +759,8 @@ async def create_job(
         "name": name,
         "email": email.strip(),
         "consent": consent,
-        "workflow": workflow,
+        "workflow": effective_workflow,
+        "requested_workflow": requested_workflow,
         "direction": direction,
         "speed": speed,
         "duration_seconds": duration_seconds,
@@ -337,7 +779,7 @@ async def job_status(jid: str):
     job = _jobs.get(jid)
     if job is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    base = f"http://{_lan_ip()}:{PORT}"
+    base = _public_base_url()
     with _lock:
         return {
             "status": job.status,
@@ -367,29 +809,6 @@ async def job_result(jid: str):
     return Response(content=Path(job.result).read_bytes(), media_type="video/mp4")
 
 
-def _installed_nodes() -> set[str]:
-    """ComfyUI's registered node types, cached ~30s so the picker doesn't hammer
-    /object_info. Empty set = ComfyUI unknown (don't block on it)."""
-    now = time.time()
-    with _nodes_lock:
-        global _nodes_cache, _nodes_at
-        if _nodes_cache is not None and (now - _nodes_at) < 30:
-            return _nodes_cache
-    nodes = comfy.node_types()
-    with _nodes_lock:
-        _nodes_cache = nodes
-        _nodes_at = now
-    return nodes
-
-
-@app.get("/workflows")
-async def list_workflows():
-    """The look catalog (grouped + flat), filtered to workflows present on disk,
-    each annotated with `available` (its ComfyUI nodes are installed) + a `reason`
-    when not. The app populates its picker from this; ids map to <id>.json."""
-    return catalog.as_json(WORKFLOW_DIR, _installed_nodes())
-
-
 @app.get("/")
 async def root():
     return {
@@ -397,7 +816,7 @@ async def root():
         "comfy": COMFY_URL,
         "workflow_dir": str(WORKFLOW_DIR),
         "default_workflow": DEFAULT_WORKFLOW,
-        "workflows_available": len(catalog.available(WORKFLOW_DIR)),
+        "force_workflow": FORCE_WORKFLOW or None,
         "smtp_configured": bool(SMTP_USER and SMTP_PASSWORD),
         "jobs": len(_jobs),
     }

@@ -33,11 +33,20 @@ class ProcessingScreen extends StatelessWidget {
                     : _pctText(pct),
               ),
               const SizedBox(height: 36),
-              const Text('Generating your AI video',
-                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
+              Text(
+                flow.processingTitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               const SizedBox(height: 10),
-              const Text('Running locally on AMD Ryzen AI — no cloud',
-                  style: TextStyle(fontSize: 16, color: Colors.white60)),
+              Text(
+                flow.processingSubtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.white60),
+              ),
             ],
           ),
         );
@@ -45,6 +54,8 @@ class ProcessingScreen extends StatelessWidget {
     );
   }
 
-  Widget _pctText(int pct) => Text('$pct%',
-      style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w800));
+  Widget _pctText(int pct) => Text(
+    '$pct%',
+    style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w800),
+  );
 }

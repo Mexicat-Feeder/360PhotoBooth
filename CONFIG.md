@@ -12,6 +12,8 @@ Use `booth.env` as the local master config file.
 - `BOOTH_HOST` / `BOOTH_PORT`: backend bind address and port.
 - `COMFY_URL`: ComfyUI API URL used by the backend.
 - `WORKFLOW_DIR` / `WORKFLOW`: ComfyUI workflow JSON selection.
+- `FORCE_WORKFLOW`: optional backend-side workflow override. This is useful
+  when an installed phone build still submits an older workflow name.
 - `SMTP_*`: email delivery settings.
 
 When changing Wi-Fi networks, update both:

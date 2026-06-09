@@ -36,18 +36,29 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('Let us get you set up',
-                    style:
-                        TextStyle(fontSize: 34, fontWeight: FontWeight.w800)),
+                const Text(
+                  'Let us get you set up',
+                  style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(height: 8),
-                const Text('We will email your AI video when it is ready.',
-                    style: TextStyle(fontSize: 16, color: Colors.white60)),
+                const Text(
+                  'We will email your AI video when it is ready.',
+                  style: TextStyle(fontSize: 16, color: Colors.white60),
+                ),
                 const SizedBox(height: 32),
-                _field(_name, 'First name', Icons.person_outline,
-                    cap: TextCapitalization.words),
+                _field(
+                  _name,
+                  'First name',
+                  Icons.person_outline,
+                  cap: TextCapitalization.words,
+                ),
                 const SizedBox(height: 16),
-                _field(_email, 'Email', Icons.mail_outline,
-                    keyboard: TextInputType.emailAddress),
+                _field(
+                  _email,
+                  'Email',
+                  Icons.mail_outline,
+                  keyboard: TextInputType.emailAddress,
+                ),
                 const SizedBox(height: 18),
                 CheckboxListTile(
                   value: _consent,
@@ -73,22 +84,26 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
                             email: _email.text.trim(),
                             consent: _consent,
                           );
-                          widget.flow.go(AppPhase.style);
+                          widget.flow.go(AppPhase.preview);
                         }
                       : null,
                 ),
                 const SizedBox(height: 10),
                 if (!_valid)
                   const Center(
-                    child: Text('Enter name, email, and consent to continue',
-                        style: TextStyle(color: Colors.white38, fontSize: 13)),
+                    child: Text(
+                      'Enter name, email, and consent to continue',
+                      style: TextStyle(color: Colors.white38, fontSize: 13),
+                    ),
                   ),
                 const SizedBox(height: 4),
                 Center(
                   child: TextButton(
                     onPressed: () => widget.flow.go(AppPhase.attract),
-                    child: const Text('Back',
-                        style: TextStyle(color: Colors.white54)),
+                    child: const Text(
+                      'Back',
+                      style: TextStyle(color: Colors.white54),
+                    ),
                   ),
                 ),
               ],
@@ -99,9 +114,13 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
     );
   }
 
-  Widget _field(TextEditingController c, String label, IconData icon,
-      {TextInputType? keyboard,
-      TextCapitalization cap = TextCapitalization.none}) {
+  Widget _field(
+    TextEditingController c,
+    String label,
+    IconData icon, {
+    TextInputType? keyboard,
+    TextCapitalization cap = TextCapitalization.none,
+  }) {
     return TextFormField(
       controller: c,
       keyboardType: keyboard,
@@ -112,8 +131,10 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
         prefixIcon: Icon(icon),
         filled: true,
         fillColor: Brand.surface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 22,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,

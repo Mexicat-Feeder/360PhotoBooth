@@ -24,7 +24,7 @@ const String kWorkflow = String.fromEnvironment(
 String backendBaseUrl() {
   const override = String.fromEnvironment('BOOTH_BACKEND');
   if (override.isNotEmpty) return override;
-  if (Platform.isAndroid) return 'http://10.6.14.178:8000';
+  if (Platform.isAndroid) return 'http://192.168.50.166:8000'; // use env
   return 'http://localhost:8000';
 }
 

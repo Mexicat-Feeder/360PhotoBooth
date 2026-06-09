@@ -47,6 +47,111 @@ class Job:
 
 
 JOBS: dict[str, Job] = {}
+PREVIEW_JOBS: dict[str, Job] = {}
+PRESETS = [
+    {
+        "id": "cinematic_glow",
+        "name": "Cinematic Glow",
+        "description": "Soft bloom, polished contrast, and a clean event-video look.",
+    },
+    {
+        "id": "neon_edge",
+        "name": "Neon Edge",
+        "description": "Bright contour lines blended back over the original footage.",
+    },
+    {
+        "id": "comic_pop",
+        "name": "Comic Pop",
+        "description": "Reduced colors, crisp edges, and a punchy graphic finish.",
+    },
+    {
+        "id": "chrome_negative",
+        "name": "Chrome Negative",
+        "description": "High-contrast inverted chrome with sharp futuristic detail.",
+    },
+]
+
+
+@app.get("/presets")
+async def presets():
+    return {"presets": PRESETS}
+
+
+@app.post("/preview-jobs")
+async def create_preview_job(
+    file: UploadFile,
+    name: str = Form(""),
+    email: str = Form(""),
+    consent: bool = Form(False),
+    workflow: str = Form("native_video_invert"),
+    direction: str = Form(""),
+    speed: int = Form(0),
+    duration_seconds: int = Form(0),
+):
+    if not consent:
+        return JSONResponse({"error": "consent required"}, status_code=400)
+    if not email.strip():
+        return JSONResponse({"error": "email required"}, status_code=400)
+    job = Job(
+        id=uuid.uuid4().hex[:8],
+        name=name,
+        email=email.strip(),
+        consent=consent,
+        workflow=workflow,
+        direction=direction,
+        speed=speed,
+        duration_seconds=duration_seconds,
+        video=await file.read(),
+    )
+    PREVIEW_JOBS[job.id] = job
+    return {"preview_job_id": job.id}
+
+
+@app.get("/preview-jobs/{job_id}")
+async def preview_job_status(job_id: str):
+    job = PREVIEW_JOBS.get(job_id)
+    if job is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return {
+        "status": job.status,
+        "progress": round(job.progress, 3),
+        "error": None,
+        "presets": [
+            {
+                **preset,
+                "preview_url": f"/preview-jobs/{job_id}/previews/{preset['id']}",
+            }
+            for preset in PRESETS
+        ],
+    }
+
+
+@app.get("/preview-jobs/{job_id}/previews/{preset_id}")
+async def preview_job_video(job_id: str, preset_id: str):
+    job = PREVIEW_JOBS.get(job_id)
+    if job is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return Response(content=job.video, media_type="video/mp4")
+
+
+@app.post("/preview-jobs/{job_id}/finalize")
+async def finalize_preview_job(job_id: str, preset_id: str = Form("")):
+    preview = PREVIEW_JOBS.get(job_id)
+    if preview is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    job = Job(
+        id=uuid.uuid4().hex[:8],
+        name=preview.name,
+        email=preview.email,
+        consent=preview.consent,
+        workflow=preset_id,
+        direction=preview.direction,
+        speed=preview.speed,
+        duration_seconds=preview.duration_seconds,
+        video=preview.video,
+    )
+    JOBS[job.id] = job
+    return {"job_id": job.id}
 
 
 @app.post("/jobs")

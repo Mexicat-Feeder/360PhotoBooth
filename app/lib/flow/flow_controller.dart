@@ -10,12 +10,13 @@ import '../camera/camera_service.dart';
 enum AppPhase {
   attract,
   info,
-  style,
   preview,
   countdown,
   capture,
   processing,
-  result
+  preset,
+  submitted,
+  result,
 }
 
 /// Drives the guest experience: attract -> info -> countdown -> capture(+spin)
@@ -44,43 +45,21 @@ class FlowController extends ChangeNotifier {
   int speed = 5;
   int spinSecs = 8;
   String workflow;
-
-  // look catalog (for the style picker); starts with the offline fallback.
-  List<LookFamily> catalog = kFallbackCatalog;
-
-  void setWorkflow(String id) {
-    // ignore picks for looks the backend reported unavailable
-    final opt = catalog.expand((f) => f.items).where((o) => o.id == id);
-    if (opt.isNotEmpty && !opt.first.available) return;
-    workflow = id;
-    notifyListeners();
-  }
-
-  /// Pull the live catalog from the backend; keep the fallback on any error.
-  Future<void> loadWorkflows() async {
-    final remote = await backend.fetchWorkflows();
-    if (remote.isNotEmpty) {
-      catalog = remote;
-      final all = remote.expand((f) => f.items).toList();
-      final current = all.where((o) => o.id == workflow);
-      // if the chosen look is gone or now unavailable, fall back to the first
-      // available one.
-      if (current.isEmpty || !current.first.available) {
-        final firstOk = all.where((o) => o.available);
-        if (firstOk.isNotEmpty) workflow = firstOk.first.id;
-      }
-      notifyListeners();
-    }
-  }
+  String? previewJobId;
+  String? selectedPresetId;
+  List<PresetPreview> presetPreviews = [];
 
   // processing/result
   double progress = 0;
+  String processingTitle = 'Generating your video';
+  String processingSubtitle = 'Running locally on AMD Ryzen AI';
   String? previewUrl;
   String? resultUrl; // remote URL (for the QR)
   String? resultLocalPath; // downloaded mp4 (for in-app playback)
   bool showQr = false; // result screen: false = video, true = QR
   String? error;
   String? _videoPath;
+  Timer? _returnHomeTimer;
 
   Future<void> init() async {
     try {
@@ -90,8 +69,6 @@ class FlowController extends ChangeNotifier {
     }
     // connect the booth in the background so it's ready by capture time
     unawaited(booth.connect());
-    // fetch the live look catalog (falls back to kFallbackCatalog on error)
-    unawaited(loadWorkflows());
   }
 
   void go(AppPhase p) {
@@ -107,13 +84,20 @@ class FlowController extends ChangeNotifier {
   }
 
   void reset() {
+    _returnHomeTimer?.cancel();
+    _returnHomeTimer = null;
     name = '';
     email = '';
     consent = false;
     progress = 0;
+    processingTitle = 'Generating your video';
+    processingSubtitle = 'Running locally on AMD Ryzen AI';
     previewUrl = null;
     resultUrl = null;
     resultLocalPath = null;
+    previewJobId = null;
+    selectedPresetId = null;
+    presetPreviews = [];
     showQr = false;
     error = null;
     _videoPath = null;
@@ -150,13 +134,16 @@ class FlowController extends ChangeNotifier {
     }
 
     go(AppPhase.processing);
-    await _process();
+    await _preparePreviews();
   }
 
-  Future<void> _process() async {
+  Future<void> _preparePreviews() async {
     progress = 0;
+    processingTitle = 'Generating preview looks';
+    processingSubtitle = 'Making four short previews from your capture';
+    notifyListeners();
     try {
-      await backend.uploadJob(
+      final id = await backend.createPreviewJob(
         filePath: _videoPath!,
         name: name,
         email: email,
@@ -166,10 +153,64 @@ class FlowController extends ChangeNotifier {
         speed: speed,
         durationSeconds: spinSecs,
       );
-      progress = 1;
+      previewJobId = id;
+      await for (final p in backend.pollPreviewJob(id)) {
+        progress = p.progress;
+        presetPreviews = p.presets;
+        if (p.failed) {
+          error = p.error ?? 'preview generation failed';
+          break;
+        }
+        notifyListeners();
+      }
+      if (error == null) {
+        selectedPresetId = presetPreviews.isNotEmpty
+            ? presetPreviews.first.id
+            : null;
+        go(AppPhase.preset);
+        return;
+      }
     } catch (e) {
-      error = 'processing failed: $e';
+      error = 'preview generation failed: $e';
     }
     go(AppPhase.result);
+  }
+
+  Future<void> selectPresetAndProcess(String presetId) async {
+    final id = previewJobId;
+    if (id == null) {
+      error = 'preview job missing';
+      go(AppPhase.result);
+      return;
+    }
+
+    selectedPresetId = presetId;
+    progress = 0;
+    resultUrl = null;
+    resultLocalPath = null;
+    error = null;
+    processingTitle = 'Sending final job';
+    processingSubtitle = 'Queueing the selected look for rendering';
+    go(AppPhase.processing);
+
+    try {
+      await backend.finalizePreviewJob(id, presetId);
+      progress = 1;
+      go(AppPhase.submitted);
+      _scheduleReturnHome();
+    } catch (e) {
+      error = 'final job submit failed: $e';
+      go(AppPhase.result);
+    }
+  }
+
+  void _scheduleReturnHome() {
+    _returnHomeTimer?.cancel();
+    _returnHomeTimer = Timer(const Duration(seconds: 4), () {
+      _returnHomeTimer = null;
+      if (phase == AppPhase.submitted) {
+        reset();
+      }
+    });
   }
 }
