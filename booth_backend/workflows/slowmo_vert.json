@@ -1,0 +1,59 @@
+{
+  "1": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "PLACEHOLDER.mp4",
+      "force_rate": 30.0,
+      "custom_width": 720,
+      "custom_height": 720,
+      "frame_load_cap": 240,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    }
+  },
+  "2": {
+    "class_type": "RIFE VFI",
+    "inputs": {
+      "frames": [
+        "1",
+        0
+      ],
+      "ckpt_name": "rife47.pth",
+      "clear_cache_after_n_frames": 10,
+      "multiplier": 2,
+      "fast_mode": true,
+      "ensemble": true,
+      "scale_factor": 1.0
+    }
+  },
+  "3": {
+    "class_type": "ImagePadForOutpaint",
+    "inputs": {
+      "image": [
+        "2",
+        0
+      ],
+      "left": 0,
+      "right": 0,
+      "top": 280,
+      "bottom": 280,
+      "feathering": 0
+    }
+  },
+  "4": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        "3",
+        0
+      ],
+      "frame_rate": 30,
+      "loop_count": 0,
+      "filename_prefix": "booth_slowmo_vert",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

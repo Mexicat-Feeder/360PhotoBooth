@@ -73,7 +73,7 @@ class _InfoEntryScreenState extends State<InfoEntryScreen> {
                             email: _email.text.trim(),
                             consent: _consent,
                           );
-                          widget.flow.go(AppPhase.preview);
+                          widget.flow.go(AppPhase.style);
                         }
                       : null,
                 ),

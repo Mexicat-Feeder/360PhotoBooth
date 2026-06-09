@@ -1,0 +1,189 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "DreamShaper_8_pruned.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "clip": [
+        "1",
+        1
+      ],
+      "lora_name": "AnimateLCM_sd15_t2v_lora.safetensors",
+      "strength_model": 1.0,
+      "strength_clip": 1.0
+    }
+  },
+  "3": {
+    "class_type": "ADE_StandardUniformContextOptions",
+    "inputs": {
+      "context_length": 16,
+      "context_stride": 1,
+      "context_overlap": 4
+    }
+  },
+  "4": {
+    "class_type": "ADE_AnimateDiffLoaderWithContext",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "model_name": "AnimateLCM_sd15_t2v.ckpt",
+      "beta_schedule": "lcm",
+      "context_options": [
+        "3",
+        0
+      ]
+    }
+  },
+  "5": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "PLACEHOLDER.mp4",
+      "force_rate": 4.0,
+      "custom_width": 512,
+      "custom_height": 512,
+      "frame_load_cap": 32,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    }
+  },
+  "6": {
+    "class_type": "LineArtPreprocessor",
+    "inputs": {
+      "image": [
+        "5",
+        0
+      ],
+      "coarse": "disable",
+      "resolution": 512
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "cyberpunk neon portrait, glowing magenta and cyan rim light, rainy night city bokeh, blade-runner cinematic, high contrast, detailed",
+      "clip": [
+        "2",
+        1
+      ]
+    }
+  },
+  "8": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "photograph, realistic, blurry, low quality, deformed, extra limbs, text, watermark, jpeg artifacts",
+      "clip": [
+        "2",
+        1
+      ]
+    }
+  },
+  "9": {
+    "class_type": "ControlNetLoader",
+    "inputs": {
+      "control_net_name": "control_v11p_sd15_lineart.pth"
+    }
+  },
+  "10": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": [
+        "7",
+        0
+      ],
+      "negative": [
+        "8",
+        0
+      ],
+      "control_net": [
+        "9",
+        0
+      ],
+      "image": [
+        "6",
+        0
+      ],
+      "strength": 0.65,
+      "start_percent": 0.0,
+      "end_percent": 1.0
+    }
+  },
+  "11": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "5",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "12": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "seed": 42,
+      "steps": 6,
+      "cfg": 1.8,
+      "sampler_name": "lcm",
+      "scheduler": "sgm_uniform",
+      "positive": [
+        "10",
+        0
+      ],
+      "negative": [
+        "10",
+        1
+      ],
+      "latent_image": [
+        "11",
+        0
+      ],
+      "denoise": 0.62
+    }
+  },
+  "13": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "12",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "14": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        "13",
+        0
+      ],
+      "frame_rate": 4.0,
+      "loop_count": 0,
+      "filename_prefix": "booth_cyberpunk",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

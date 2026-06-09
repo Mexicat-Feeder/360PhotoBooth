@@ -33,6 +33,7 @@ from pathlib import Path
 from fastapi import FastAPI, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from . import catalog
 from .comfy_client import ComfyClient, Progress
 
 
@@ -98,6 +99,11 @@ class Job:
 _jobs: dict[str, Job] = {}
 _lock = threading.Lock()
 _work: "queue.Queue[str]" = queue.Queue()
+
+# cache of ComfyUI's registered node types (for per-look availability)
+_nodes_cache: "set[str] | None" = None
+_nodes_at: float = 0.0
+_nodes_lock = threading.Lock()
 
 
 def _lan_ip() -> str:
@@ -200,6 +206,16 @@ def _process(job: Job) -> None:
     if not workflow_path.exists():
         raise RuntimeError(f"workflow not found: {workflow_path} "
                            "(author it in ComfyUI and export API JSON)")
+    # Pre-flight: fail fast with a friendly message if this look needs a custom
+    # node ComfyUI doesn't have, rather than a cryptic /prompt 400 mid-run.
+    miss = catalog.missing_nodes(
+        Path(job.workflow).stem, _installed_nodes(), WORKFLOW_DIR)
+    if miss:
+        look = catalog.CATALOG_BY_ID.get(Path(job.workflow).stem)
+        need = (look.needs if look and look.needs else ", ".join(miss))
+        raise RuntimeError(
+            f"This look isn't available on the booth yet (missing {need}). "
+            "Pick another style, or install the node in ComfyUI.")
     wf = json.loads(workflow_path.read_text())
     input_name = comfy.upload_video(job.src)
     wf = _patch_workflow(wf, input_name, job.id)
@@ -351,6 +367,29 @@ async def job_result(jid: str):
     return Response(content=Path(job.result).read_bytes(), media_type="video/mp4")
 
 
+def _installed_nodes() -> set[str]:
+    """ComfyUI's registered node types, cached ~30s so the picker doesn't hammer
+    /object_info. Empty set = ComfyUI unknown (don't block on it)."""
+    now = time.time()
+    with _nodes_lock:
+        global _nodes_cache, _nodes_at
+        if _nodes_cache is not None and (now - _nodes_at) < 30:
+            return _nodes_cache
+    nodes = comfy.node_types()
+    with _nodes_lock:
+        _nodes_cache = nodes
+        _nodes_at = now
+    return nodes
+
+
+@app.get("/workflows")
+async def list_workflows():
+    """The look catalog (grouped + flat), filtered to workflows present on disk,
+    each annotated with `available` (its ComfyUI nodes are installed) + a `reason`
+    when not. The app populates its picker from this; ids map to <id>.json."""
+    return catalog.as_json(WORKFLOW_DIR, _installed_nodes())
+
+
 @app.get("/")
 async def root():
     return {
@@ -358,6 +397,7 @@ async def root():
         "comfy": COMFY_URL,
         "workflow_dir": str(WORKFLOW_DIR),
         "default_workflow": DEFAULT_WORKFLOW,
+        "workflows_available": len(catalog.available(WORKFLOW_DIR)),
         "smtp_configured": bool(SMTP_USER and SMTP_PASSWORD),
         "jobs": len(_jobs),
     }

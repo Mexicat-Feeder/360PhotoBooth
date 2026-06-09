@@ -7,7 +7,16 @@ import '../ble/booth_controller.dart';
 import '../ble/booth_protocol.dart';
 import '../camera/camera_service.dart';
 
-enum AppPhase { attract, info, preview, countdown, capture, processing, result }
+enum AppPhase {
+  attract,
+  info,
+  style,
+  preview,
+  countdown,
+  capture,
+  processing,
+  result
+}
 
 /// Drives the guest experience: attract -> info -> countdown -> capture(+spin)
 /// -> processing -> result. Owns the booth, camera, and backend.
@@ -36,6 +45,34 @@ class FlowController extends ChangeNotifier {
   int spinSecs = 8;
   String workflow;
 
+  // look catalog (for the style picker); starts with the offline fallback.
+  List<LookFamily> catalog = kFallbackCatalog;
+
+  void setWorkflow(String id) {
+    // ignore picks for looks the backend reported unavailable
+    final opt = catalog.expand((f) => f.items).where((o) => o.id == id);
+    if (opt.isNotEmpty && !opt.first.available) return;
+    workflow = id;
+    notifyListeners();
+  }
+
+  /// Pull the live catalog from the backend; keep the fallback on any error.
+  Future<void> loadWorkflows() async {
+    final remote = await backend.fetchWorkflows();
+    if (remote.isNotEmpty) {
+      catalog = remote;
+      final all = remote.expand((f) => f.items).toList();
+      final current = all.where((o) => o.id == workflow);
+      // if the chosen look is gone or now unavailable, fall back to the first
+      // available one.
+      if (current.isEmpty || !current.first.available) {
+        final firstOk = all.where((o) => o.available);
+        if (firstOk.isNotEmpty) workflow = firstOk.first.id;
+      }
+      notifyListeners();
+    }
+  }
+
   // processing/result
   double progress = 0;
   String? previewUrl;
@@ -53,6 +90,8 @@ class FlowController extends ChangeNotifier {
     }
     // connect the booth in the background so it's ready by capture time
     unawaited(booth.connect());
+    // fetch the live look catalog (falls back to kFallbackCatalog on error)
+    unawaited(loadWorkflows());
   }
 
   void go(AppPhase p) {

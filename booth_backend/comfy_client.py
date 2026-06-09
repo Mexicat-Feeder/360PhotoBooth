@@ -67,6 +67,17 @@ class ComfyClient:
         r.raise_for_status()
         return r.json()
 
+    def node_types(self) -> set[str]:
+        """All node class_types registered in this ComfyUI (from /object_info).
+        Returns an empty set if ComfyUI is unreachable — callers treat empty as
+        'unknown', not 'nothing available'."""
+        try:
+            r = requests.get(f"{self.base}/object_info", timeout=10)
+            r.raise_for_status()
+            return set(r.json().keys())
+        except Exception:  # noqa: BLE001
+            return set()
+
     def view_bytes(self, filename: str, subfolder: str = "", type_: str = "output") -> bytes:
         q = urllib.parse.urlencode(
             {"filename": filename, "subfolder": subfolder, "type": type_})

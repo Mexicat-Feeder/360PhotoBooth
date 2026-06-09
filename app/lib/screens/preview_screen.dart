@@ -74,7 +74,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
           Row(
             children: [
               OutlinedButton.icon(
-                onPressed: () => flow.go(AppPhase.info),
+                onPressed: () => flow.go(AppPhase.style),
                 icon: const Icon(Icons.arrow_back),
                 label: const Text('Back'),
                 style: OutlinedButton.styleFrom(
