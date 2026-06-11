@@ -15,10 +15,19 @@ class PresetSelectionScreen extends StatefulWidget {
 }
 
 class _PresetSelectionScreenState extends State<PresetSelectionScreen> {
+  String _prefetchedUrlsKey = '';
+
+  @override
+  void dispose() {
+    NetworkVideoLoopPlayer.cancelPendingDownloads();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final flow = widget.flow;
     final presets = flow.presetPreviews;
+    _prefetchPreviews(presets);
     final selected = flow.selectedPresetId;
     final activePreset = _selectedPreset(presets, selected);
 
@@ -148,6 +157,17 @@ class _PresetSelectionScreenState extends State<PresetSelectionScreen> {
       if (preset.id == selectedId) return preset;
     }
     return presets.isEmpty ? null : presets.first;
+  }
+
+  void _prefetchPreviews(List<PresetPreview> presets) {
+    final urls = [
+      for (final preset in presets)
+        if (preset.previewUrl != null) preset.previewUrl!,
+    ];
+    final key = urls.join('|');
+    if (urls.isEmpty || key == _prefetchedUrlsKey) return;
+    _prefetchedUrlsKey = key;
+    NetworkVideoLoopPlayer.prefetchAll(urls);
   }
 }
 

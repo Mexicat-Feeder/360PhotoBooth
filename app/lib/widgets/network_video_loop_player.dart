@@ -2,16 +2,40 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 import '../theme.dart';
+import 'preview_video_cache.dart';
 import 'video_loop_player.dart';
 
 class NetworkVideoLoopPlayer extends StatefulWidget {
   const NetworkVideoLoopPlayer({super.key, required this.url});
 
   final String url;
+
+  static void prefetchAll(Iterable<String> urls) {
+    for (final url in urls) {
+      unawaited(_prefetch(url));
+    }
+  }
+
+  static void cancelPendingDownloads() {
+    PreviewVideoCache.instance.cancelPending();
+  }
+
+  static Future<void> _prefetch(String url) async {
+    try {
+      final file = await PreviewVideoCache.instance.get(url);
+      if (_usesFramePreviewOnThisPlatform) {
+        await VideoLoopPlayer.precacheFrames(file.path, fps: 12);
+      }
+    } catch (_) {
+      // The visible player will surface an error if the selected preview fails.
+    }
+  }
+
+  static bool get _usesFramePreviewOnThisPlatform =>
+      Platform.isWindows || Platform.isLinux;
 
   @override
   State<NetworkVideoLoopPlayer> createState() => _NetworkVideoLoopPlayerState();
@@ -50,17 +74,7 @@ class _NetworkVideoLoopPlayerState extends State<NetworkVideoLoopPlayer> {
     await old?.dispose();
 
     try {
-      final uri = Uri.parse(widget.url);
-      final response = await http.get(uri).timeout(const Duration(seconds: 45));
-      if (response.statusCode >= 400) {
-        throw StateError('preview fetch failed: ${response.statusCode}');
-      }
-      if (response.bodyBytes.isEmpty) {
-        throw StateError('preview fetch returned an empty file');
-      }
-
-      final file = File(_cachePathFor(uri));
-      await file.writeAsBytes(response.bodyBytes, flush: true);
+      final file = await PreviewVideoCache.instance.get(widget.url);
 
       if (_usesFramePreview) {
         if (!mounted || token != _loadToken) return;
@@ -86,13 +100,8 @@ class _NetworkVideoLoopPlayerState extends State<NetworkVideoLoopPlayer> {
     }
   }
 
-  bool get _usesFramePreview => Platform.isWindows || Platform.isLinux;
-
-  String _cachePathFor(Uri uri) {
-    final key = uri.toString().hashCode.toUnsigned(32).toRadixString(16);
-    return '${Directory.systemTemp.path}${Platform.pathSeparator}'
-        'booth_preview_$key.mp4';
-  }
+  bool get _usesFramePreview =>
+      NetworkVideoLoopPlayer._usesFramePreviewOnThisPlatform;
 
   @override
   Widget build(BuildContext context) {
