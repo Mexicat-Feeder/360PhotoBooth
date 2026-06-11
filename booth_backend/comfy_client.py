@@ -11,6 +11,7 @@ Endpoints used:
 from __future__ import annotations
 
 import json
+import os
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,8 @@ class ComfyClient:
     def __init__(self, base_url: str = "http://127.0.0.1:8188"):
         self.base = base_url.rstrip("/")
         self.ws_base = "ws" + self.base[len("http"):]
+        output_dir = os.environ.get("COMFY_OUTPUT_DIR", "").strip()
+        self.output_dir = Path(output_dir) if output_dir else None
 
     # --- HTTP ---------------------------------------------------------------
     def upload_video(self, path: str) -> str:
@@ -80,11 +83,36 @@ class ComfyClient:
             return set()
 
     def view_bytes(self, filename: str, subfolder: str = "", type_: str = "output") -> bytes:
+        local = self._local_view_path(filename, subfolder, type_)
+        if local is not None and local.exists():
+            return local.read_bytes()
+
         q = urllib.parse.urlencode(
             {"filename": filename, "subfolder": subfolder, "type": type_})
-        r = requests.get(f"{self.base}/view?{q}", timeout=120)
-        r.raise_for_status()
-        return r.content
+        try:
+            r = requests.get(f"{self.base}/view?{q}", timeout=120)
+            r.raise_for_status()
+            return r.content
+        except requests.RequestException:
+            if local is not None and local.exists():
+                return local.read_bytes()
+            raise
+
+    def _local_view_path(
+        self,
+        filename: str,
+        subfolder: str = "",
+        type_: str = "output",
+    ) -> Path | None:
+        if self.output_dir is None or type_ != "output":
+            return None
+        base = self.output_dir.resolve()
+        candidate = (base / subfolder / filename).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            return None
+        return candidate
 
     # --- WebSocket ----------------------------------------------------------
     def run_and_wait(

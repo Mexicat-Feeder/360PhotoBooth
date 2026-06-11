@@ -26,9 +26,17 @@ filters.
 - `preset_chrome_negative_preview.json`
 - `preset_chrome_negative_final.json`
 
-Each preset workflow loads `z_image_turbo_bf16.safetensors`, encodes the video
-frames through the checkpoint VAE, runs `KSampler` with preset-specific positive
-and negative prompts, decodes the sampled latents, then saves a video.
+Each preset workflow uses the Z-Image Turbo loader stack from the local ComfyUI
+blueprints:
+
+- `UNETLoader` loads `z_image_turbo_bf16.safetensors`.
+- `CLIPLoader` loads `qwen_3_4b.safetensors` with type `lumina2`.
+- `VAELoader` loads `ae.safetensors`.
+- `ModelSamplingAuraFlow` adapts the model before sampling.
+
+The workflow then encodes the video frames through the standalone VAE, runs
+`KSampler` with preset-specific positive and negative prompts, decodes the
+sampled latents, and saves a video.
 
 Preview renders target `360x640` with fewer sampler steps and lower denoise.
 Final renders target `720x1280` with more sampler steps and stronger denoise,

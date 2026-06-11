@@ -5,7 +5,10 @@ from booth_backend import server
 
 class WorkflowFilesTest(unittest.TestCase):
     ai_node_types = {
-        "CheckpointLoaderSimple",
+        "UNETLoader",
+        "ModelSamplingAuraFlow",
+        "CLIPLoader",
+        "VAELoader",
         "CLIPTextEncode",
         "VAEEncode",
         "KSampler",

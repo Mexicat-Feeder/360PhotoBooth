@@ -28,32 +28,57 @@
     }
   },
   "4": {
-    "class_type": "CheckpointLoaderSimple",
+    "class_type": "UNETLoader",
     "inputs": {
-      "ckpt_name": "z_image_turbo_bf16.safetensors"
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
     }
   },
   "5": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "shift": 3
+    }
+  },
+  "6": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    }
+  },
+  "7": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    }
+  },
+  "8": {
     "class_type": "CLIPTextEncode",
     "inputs": {
       "text": "high-end cinematic event video portrait, soft bloom, warm key light, polished contrast, glossy highlights, clean skin tones, professional 360 photo booth, elegant premium party video",
       "clip": [
-        "4",
-        1
+        "6",
+        0
       ]
     }
   },
-  "6": {
+  "9": {
     "class_type": "CLIPTextEncode",
     "inputs": {
       "text": "low quality, blurry, distorted face, deformed hands, bad anatomy, extra limbs, text, watermark, logo, artifacts, flicker, jitter, noisy, muddy colors, oversaturated",
       "clip": [
-        "4",
-        1
+        "6",
+        0
       ]
     }
   },
-  "7": {
+  "10": {
     "class_type": "VAEEncode",
     "inputs": {
       "pixels": [
@@ -61,56 +86,56 @@
         0
       ],
       "vae": [
-        "4",
-        2
+        "7",
+        0
       ]
     }
   },
-  "8": {
+  "11": {
     "class_type": "KSampler",
     "inputs": {
       "model": [
-        "4",
-        0
-      ],
-      "seed": 42,
-      "steps": 8,
-      "cfg": 1.6,
-      "sampler_name": "euler",
-      "scheduler": "simple",
-      "positive": [
         "5",
         0
       ],
-      "negative": [
-        "6",
-        0
-      ],
-      "latent_image": [
-        "7",
-        0
-      ],
-      "denoise": 0.48
-    }
-  },
-  "9": {
-    "class_type": "VAEDecode",
-    "inputs": {
-      "samples": [
+      "seed": 42,
+      "steps": 9,
+      "cfg": 1.0,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "positive": [
         "8",
         0
       ],
+      "negative": [
+        "9",
+        0
+      ],
+      "latent_image": [
+        "10",
+        0
+      ],
+      "denoise": 0.42
+    }
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "11",
+        0
+      ],
       "vae": [
-        "4",
-        2
+        "7",
+        0
       ]
     }
   },
-  "10": {
+  "13": {
     "class_type": "CreateVideo",
     "inputs": {
       "images": [
-        "9",
+        "12",
         0
       ],
       "fps": [
@@ -119,11 +144,11 @@
       ]
     }
   },
-  "11": {
+  "14": {
     "class_type": "SaveVideo",
     "inputs": {
       "video": [
-        "10",
+        "13",
         0
       ],
       "filename_prefix": "booth_preset_cinematic_glow_final",
