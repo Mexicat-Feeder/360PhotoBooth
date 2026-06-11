@@ -28,45 +28,89 @@
     }
   },
   "4": {
-    "class_type": "Canny",
+    "class_type": "CheckpointLoaderSimple",
     "inputs": {
-      "image": [
-        "3",
-        0
-      ],
-      "low_threshold": 0.12,
-      "high_threshold": 0.32
+      "ckpt_name": "z_image_turbo_bf16.safetensors"
     }
   },
   "5": {
-    "class_type": "ImageInvert",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "image": [
+      "text": "futuristic cyberpunk neon portrait, glowing cyan and magenta rim lights, electric luminous edges, high contrast night club energy, sharp stylish event video, clean face detail",
+      "clip": [
         "4",
-        0
+        1
       ]
     }
   },
   "6": {
-    "class_type": "ImageBlend",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "image1": [
-        "3",
-        0
-      ],
-      "image2": [
-        "5",
-        0
-      ],
-      "blend_factor": 0.42,
-      "blend_mode": "screen"
+      "text": "low quality, blurry, distorted face, deformed hands, bad anatomy, extra limbs, text, watermark, logo, artifacts, flicker, jitter, noisy, muddy colors, oversaturated",
+      "clip": [
+        "4",
+        1
+      ]
     }
   },
   "7": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "seed": 42,
+      "steps": 8,
+      "cfg": 1.7,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ],
+      "denoise": 0.55
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "10": {
     "class_type": "CreateVideo",
     "inputs": {
       "images": [
-        "6",
+        "9",
         0
       ],
       "fps": [
@@ -75,11 +119,11 @@
       ]
     }
   },
-  "8": {
+  "11": {
     "class_type": "SaveVideo",
     "inputs": {
       "video": [
-        "7",
+        "10",
         0
       ],
       "filename_prefix": "booth_preset_neon_edge_final",

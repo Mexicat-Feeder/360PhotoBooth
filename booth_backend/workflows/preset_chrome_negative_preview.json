@@ -28,41 +28,89 @@
     }
   },
   "4": {
-    "class_type": "ImageInvert",
+    "class_type": "CheckpointLoaderSimple",
     "inputs": {
-      "image": [
-        "3",
-        0
-      ]
+      "ckpt_name": "z_image_turbo_bf16.safetensors"
     }
   },
   "5": {
-    "class_type": "AdjustContrast",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "images": [
+      "text": "futuristic chrome negative portrait, reflective metallic silver, inverted high contrast lighting, sleek sci-fi editorial look, dramatic polished event video, sharp face detail",
+      "clip": [
         "4",
-        0
-      ],
-      "factor": 1.28
+        1
+      ]
     }
   },
   "6": {
-    "class_type": "ImageSharpen",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "image": [
-        "5",
-        0
-      ],
-      "sharpen_radius": 2,
-      "sigma": 0.75,
-      "alpha": 1.7
+      "text": "low quality, blurry, distorted face, deformed hands, bad anatomy, extra limbs, text, watermark, logo, artifacts, flicker, jitter, noisy, muddy colors, oversaturated",
+      "clip": [
+        "4",
+        1
+      ]
     }
   },
   "7": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "seed": 42,
+      "steps": 4,
+      "cfg": 1.45,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ],
+      "denoise": 0.45
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "10": {
     "class_type": "CreateVideo",
     "inputs": {
       "images": [
-        "6",
+        "9",
         0
       ],
       "fps": [
@@ -71,11 +119,11 @@
       ]
     }
   },
-  "8": {
+  "11": {
     "class_type": "SaveVideo",
     "inputs": {
       "video": [
-        "7",
+        "10",
         0
       ],
       "filename_prefix": "booth_preset_chrome_negative_preview",

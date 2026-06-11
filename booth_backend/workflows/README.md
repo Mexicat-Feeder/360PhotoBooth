@@ -14,7 +14,8 @@ Current flow:
 
 The four visible presets are plain ComfyUI API workflow JSON files in this
 folder. Each preset has one fast preview workflow and one higher-resolution
-final workflow:
+final workflow. These are img2img AI workflows, not deterministic image
+filters.
 
 - `preset_cinematic_glow_preview.json`
 - `preset_cinematic_glow_final.json`
@@ -25,8 +26,13 @@ final workflow:
 - `preset_chrome_negative_preview.json`
 - `preset_chrome_negative_final.json`
 
-Preview renders target `360x640`. Final renders target `720x1280` so the MP4
-stays small enough to attach to email.
+Each preset workflow loads `z_image_turbo_bf16.safetensors`, encodes the video
+frames through the checkpoint VAE, runs `KSampler` with preset-specific positive
+and negative prompts, decodes the sampled latents, then saves a video.
+
+Preview renders target `360x640` with fewer sampler steps and lower denoise.
+Final renders target `720x1280` with more sampler steps and stronger denoise,
+while staying small enough to attach to email.
 
 The backend preset list in `booth_backend/server.py` only maps user-facing
 names/descriptions to these workflow filenames. The workflow graph itself
@@ -36,6 +42,9 @@ At runtime the backend patches:
 
 - `LoadVideo.inputs.file` to the uploaded ComfyUI input filename.
 - `SaveVideo.inputs.filename_prefix` to a unique per-job prefix.
+
+If a preset should change style, edit the corresponding workflow JSON prompt,
+sampler settings, denoise value, or model node in this folder.
 
 ## Session storage
 

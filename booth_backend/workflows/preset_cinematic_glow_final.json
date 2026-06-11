@@ -28,46 +28,89 @@
     }
   },
   "4": {
-    "class_type": "ImageBlur",
+    "class_type": "CheckpointLoaderSimple",
     "inputs": {
-      "image": [
-        "3",
-        0
-      ],
-      "blur_radius": 7,
-      "sigma": 2.2
+      "ckpt_name": "z_image_turbo_bf16.safetensors"
     }
   },
   "5": {
-    "class_type": "ImageBlend",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "image1": [
-        "3",
-        0
-      ],
-      "image2": [
+      "text": "high-end cinematic event video portrait, soft bloom, warm key light, polished contrast, glossy highlights, clean skin tones, professional 360 photo booth, elegant premium party video",
+      "clip": [
         "4",
-        0
-      ],
-      "blend_factor": 0.35,
-      "blend_mode": "screen"
+        1
+      ]
     }
   },
   "6": {
-    "class_type": "AdjustContrast",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "images": [
-        "5",
-        0
-      ],
-      "factor": 1.12
+      "text": "low quality, blurry, distorted face, deformed hands, bad anatomy, extra limbs, text, watermark, logo, artifacts, flicker, jitter, noisy, muddy colors, oversaturated",
+      "clip": [
+        "4",
+        1
+      ]
     }
   },
   "7": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "seed": 42,
+      "steps": 8,
+      "cfg": 1.6,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ],
+      "denoise": 0.48
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "10": {
     "class_type": "CreateVideo",
     "inputs": {
       "images": [
-        "6",
+        "9",
         0
       ],
       "fps": [
@@ -76,11 +119,11 @@
       ]
     }
   },
-  "8": {
+  "11": {
     "class_type": "SaveVideo",
     "inputs": {
       "video": [
-        "7",
+        "10",
         0
       ],
       "filename_prefix": "booth_preset_cinematic_glow_final",
