@@ -65,18 +65,33 @@ class FlowController extends ChangeNotifier {
   Timer? _returnHomeTimer;
 
   Future<void> init() async {
-    try {
-      await camera.init();
-    } catch (e) {
-      debugPrint('camera init failed: $e');
-    }
     // connect the booth in the background so it's ready by capture time
     unawaited(booth.connect());
   }
 
   void go(AppPhase p) {
+    final previous = phase;
     phase = p;
+    if (_usesCamera(previous) && !_usesCamera(p)) {
+      unawaited(_stopCameraPreview());
+    }
     notifyListeners();
+  }
+
+  bool _usesCamera(AppPhase p) {
+    return p == AppPhase.preview ||
+        p == AppPhase.countdown ||
+        p == AppPhase.capture;
+  }
+
+  Future<void> _stopCameraPreview() async {
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (_usesCamera(phase)) return;
+      await camera.stopPreview();
+    } catch (e) {
+      debugPrint('camera stop failed: $e');
+    }
   }
 
   void setGuest({String? name, String? email, bool? consent}) {
@@ -104,8 +119,7 @@ class FlowController extends ChangeNotifier {
     showQr = false;
     error = null;
     _videoPath = null;
-    phase = AppPhase.attract;
-    notifyListeners();
+    go(AppPhase.attract);
   }
 
   void goToQr() {

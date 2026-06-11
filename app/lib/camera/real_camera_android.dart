@@ -52,8 +52,25 @@ class RealCameraAndroid implements CameraService {
 
   @override
   Future<void> stopPreview() async {
-    // Keep the Android controller alive while moving from preview to countdown
-    // to capture. Releasing it here would force a slow reopen before recording.
+    final pending = _initFuture;
+    if (pending != null) {
+      try {
+        await pending;
+      } catch (_) {
+        // Fall through and clear any partially-created controller below.
+      }
+    }
+
+    final controller = _controller;
+    if (controller == null) {
+      _initFuture = null;
+      return;
+    }
+    if (controller.value.isRecordingVideo) return;
+
+    _controller = null;
+    _initFuture = null;
+    await controller.dispose();
   }
 
   @override

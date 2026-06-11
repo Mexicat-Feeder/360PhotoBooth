@@ -66,7 +66,25 @@ class RealCameraWindows implements CameraService {
 
   @override
   Future<void> stopPreview() async {
-    // Keep the Windows camera open between preview, countdown, and capture.
+    final pending = _initFuture;
+    if (pending != null) {
+      try {
+        await pending;
+      } catch (_) {
+        // Fall through and clear any partially-created controller below.
+      }
+    }
+
+    final controller = _controller;
+    if (controller == null) {
+      _initFuture = null;
+      return;
+    }
+    if (controller.value.isRecordingVideo) return;
+
+    _controller = null;
+    _initFuture = null;
+    await controller.dispose();
   }
 
   @override

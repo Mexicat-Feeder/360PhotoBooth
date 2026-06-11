@@ -22,12 +22,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
   }
 
   @override
-  void dispose() {
-    widget.flow.camera.stopPreview();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final flow = widget.flow;
     return Padding(
