@@ -12,16 +12,30 @@ Current flow:
 
 ## Current supported presets
 
-The four visible presets are generated dynamically in `booth_backend/server.py`
-using ComfyUI native video/image nodes:
+The four visible presets are plain ComfyUI API workflow JSON files in this
+folder. Each preset has one fast preview workflow and one higher-resolution
+final workflow:
 
-- `cinematic_glow`
-- `neon_edge`
-- `comic_pop`
-- `chrome_negative`
+- `preset_cinematic_glow_preview.json`
+- `preset_cinematic_glow_final.json`
+- `preset_neon_edge_preview.json`
+- `preset_neon_edge_final.json`
+- `preset_comic_pop_preview.json`
+- `preset_comic_pop_final.json`
+- `preset_chrome_negative_preview.json`
+- `preset_chrome_negative_final.json`
 
 Preview renders target `360x640`. Final renders target `720x1280` so the MP4
 stays small enough to attach to email.
+
+The backend preset list in `booth_backend/server.py` only maps user-facing
+names/descriptions to these workflow filenames. The workflow graph itself
+lives here, not hard-coded in Python.
+
+At runtime the backend patches:
+
+- `LoadVideo.inputs.file` to the uploaded ComfyUI input filename.
+- `SaveVideo.inputs.filename_prefix` to a unique per-job prefix.
 
 ## Session storage
 

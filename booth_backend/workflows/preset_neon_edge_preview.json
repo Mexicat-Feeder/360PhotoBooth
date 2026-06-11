@@ -1,0 +1,90 @@
+{
+  "1": {
+    "class_type": "LoadVideo",
+    "inputs": {
+      "file": "PLACEHOLDER.mp4"
+    }
+  },
+  "2": {
+    "class_type": "GetVideoComponents",
+    "inputs": {
+      "video": [
+        "1",
+        0
+      ]
+    }
+  },
+  "3": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "2",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 360,
+      "height": 640,
+      "crop": "center"
+    }
+  },
+  "4": {
+    "class_type": "Canny",
+    "inputs": {
+      "image": [
+        "3",
+        0
+      ],
+      "low_threshold": 0.12,
+      "high_threshold": 0.32
+    }
+  },
+  "5": {
+    "class_type": "ImageInvert",
+    "inputs": {
+      "image": [
+        "4",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "ImageBlend",
+    "inputs": {
+      "image1": [
+        "3",
+        0
+      ],
+      "image2": [
+        "5",
+        0
+      ],
+      "blend_factor": 0.42,
+      "blend_mode": "screen"
+    }
+  },
+  "7": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "6",
+        0
+      ],
+      "fps": [
+        "2",
+        2
+      ]
+    }
+  },
+  "8": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "7",
+        0
+      ],
+      "filename_prefix": "booth_preset_neon_edge_preview",
+      "format": "mp4",
+      "codec": "h264"
+    }
+  }
+}

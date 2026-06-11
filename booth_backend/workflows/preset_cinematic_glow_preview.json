@@ -1,0 +1,91 @@
+{
+  "1": {
+    "class_type": "LoadVideo",
+    "inputs": {
+      "file": "PLACEHOLDER.mp4"
+    }
+  },
+  "2": {
+    "class_type": "GetVideoComponents",
+    "inputs": {
+      "video": [
+        "1",
+        0
+      ]
+    }
+  },
+  "3": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "2",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 360,
+      "height": 640,
+      "crop": "center"
+    }
+  },
+  "4": {
+    "class_type": "ImageBlur",
+    "inputs": {
+      "image": [
+        "3",
+        0
+      ],
+      "blur_radius": 7,
+      "sigma": 2.2
+    }
+  },
+  "5": {
+    "class_type": "ImageBlend",
+    "inputs": {
+      "image1": [
+        "3",
+        0
+      ],
+      "image2": [
+        "4",
+        0
+      ],
+      "blend_factor": 0.35,
+      "blend_mode": "screen"
+    }
+  },
+  "6": {
+    "class_type": "AdjustContrast",
+    "inputs": {
+      "images": [
+        "5",
+        0
+      ],
+      "factor": 1.12
+    }
+  },
+  "7": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "6",
+        0
+      ],
+      "fps": [
+        "2",
+        2
+      ]
+    }
+  },
+  "8": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "7",
+        0
+      ],
+      "filename_prefix": "booth_preset_cinematic_glow_preview",
+      "format": "mp4",
+      "codec": "h264"
+    }
+  }
+}

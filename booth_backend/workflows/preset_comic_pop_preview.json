@@ -1,0 +1,88 @@
+{
+  "1": {
+    "class_type": "LoadVideo",
+    "inputs": {
+      "file": "PLACEHOLDER.mp4"
+    }
+  },
+  "2": {
+    "class_type": "GetVideoComponents",
+    "inputs": {
+      "video": [
+        "1",
+        0
+      ]
+    }
+  },
+  "3": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "2",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 360,
+      "height": 640,
+      "crop": "center"
+    }
+  },
+  "4": {
+    "class_type": "ImageQuantize",
+    "inputs": {
+      "image": [
+        "3",
+        0
+      ],
+      "colors": 24,
+      "dither": "bayer-4"
+    }
+  },
+  "5": {
+    "class_type": "AdjustContrast",
+    "inputs": {
+      "images": [
+        "4",
+        0
+      ],
+      "factor": 1.35
+    }
+  },
+  "6": {
+    "class_type": "ImageSharpen",
+    "inputs": {
+      "image": [
+        "5",
+        0
+      ],
+      "sharpen_radius": 2,
+      "sigma": 0.8,
+      "alpha": 1.45
+    }
+  },
+  "7": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "6",
+        0
+      ],
+      "fps": [
+        "2",
+        2
+      ]
+    }
+  },
+  "8": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "7",
+        0
+      ],
+      "filename_prefix": "booth_preset_comic_pop_preview",
+      "format": "mp4",
+      "codec": "h264"
+    }
+  }
+}
